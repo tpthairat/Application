@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TheONE สอบราชการ</title>
+    <title>Civil Service Exam Prep (Custom Logo)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -357,8 +357,8 @@
                     <div className="absolute bottom-[-10%] left-[-5%] w-72 h-72 bg-blue-400/10 rounded-full blur-3xl"></div>
                     <div className="w-full max-w-sm z-10">
                         <div className="flex flex-col items-center mb-10">
-                            <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4 transform -rotate-3 hover:rotate-0 transition-transform duration-300">
-                                <Icon name="history_edu" className="text-white text-4xl" />
+                            <div className="w-24 h-24 rounded-full overflow-hidden shadow-xl shadow-blue-500/20 mb-6 border-4 border-white transform hover:scale-105 transition-transform duration-300">
+                                <img src="https://img2.pic.in.th/channels4_profileb88383d3623b24ab.jpg" alt="Logo" className="w-full h-full object-cover" />
                             </div>
                             <h1 className="text-2xl font-bold text-[#111418]">เข้าสู่ระบบ</h1>
                             <p className="text-slate-500 text-sm mt-2">เตรียมตัวสอบข้าราชการไปกับเรา</p>
@@ -595,21 +595,32 @@
         // --- Reader Modal (Shared for Video & Summary) ---
         function ContentReaderModal({ content, onClose }) {
             const embedUrl = content.type === 'video' && content.url ? content.url.replace("watch?v=", "embed/").replace("youtu.be/", "youtube.com/embed/") : content.url;
+            
+            // Auto convert Google Drive view to preview for embedding
+            let displayUrl = content.url;
+            if (content.url.includes('drive.google.com') && content.url.includes('/view')) {
+                displayUrl = content.url.replace('/view', '/preview');
+            }
 
             return (
                 <div className="fixed inset-0 z-50 bg-black bg-opacity-95 flex flex-col animate-fade-in">
                     <div className="flex justify-between items-center p-4 bg-black text-white">
-                        <h3 className="font-bold truncate pr-4 text-sm">{content.title}</h3>
-                        <button onClick={onClose} className="p-2 bg-white/10 rounded-full hover:bg-white/20">
-                            <Icon name="close" />
-                        </button>
+                        <div className="flex items-center gap-3 overflow-hidden">
+                            <button onClick={onClose} className="p-2 bg-white/10 rounded-full hover:bg-white/20">
+                                <Icon name="close" />
+                            </button>
+                            <h3 className="font-bold truncate text-sm">{content.title}</h3>
+                        </div>
+                        <a href={content.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-xs bg-primary px-3 py-1.5 rounded-lg hover:bg-blue-600 transition-colors shrink-0">
+                            <Icon name="open_in_new" className="text-sm" /> เปิดภายนอก
+                        </a>
                     </div>
                     <div className="flex-1 overflow-hidden flex items-center justify-center bg-[#111]">
                         {content.type === 'image' && (
                             <img src={content.url} alt={content.title} className="max-w-full max-h-full object-contain" />
                         )}
-                        {content.type === 'pdf' && (
-                            <iframe src={content.url} className="w-full h-full border-0" title={content.title}></iframe>
+                        {(content.type === 'pdf' || content.type === 'web') && (
+                            <iframe src={displayUrl} className="w-full h-full border-0 bg-white" title={content.title}></iframe>
                         )}
                         {content.type === 'video' && (
                             <div className="w-full h-full md:max-w-4xl md:h-auto md:aspect-video bg-black flex items-center justify-center">
@@ -621,31 +632,28 @@
                                 ></iframe>
                             </div>
                         )}
-                        {content.type === 'web' && (
-                            <iframe src={content.url} className="w-full h-full border-0 bg-white" title={content.title}></iframe>
-                        )}
                     </div>
                 </div>
             );
         }
 
         // --- Add Content Modal (Shared) ---
-        function AddContentModal({ onClose, onSave, defaultType = 'pdf' }) {
-            const [title, setTitle] = useState('');
-            const [url, setUrl] = useState('');
-            const [type, setType] = useState(defaultType);
+        function AddContentModal({ onClose, onSave, defaultType = 'pdf', initialData = null }) {
+            const [title, setTitle] = useState(initialData ? initialData.title : '');
+            const [url, setUrl] = useState(initialData ? initialData.url : '');
+            const [type, setType] = useState(initialData ? initialData.type : defaultType);
 
             const handleSubmit = (e) => {
                 e.preventDefault();
                 if (!title || !url) return alert('กรุณากรอกข้อมูลให้ครบ');
-                onSave({ title, url, type, createdAt: new Date() });
+                onSave({ title, url, type, createdAt: initialData ? initialData.createdAt : new Date() });
             };
 
             return (
                 <div className="modal-overlay" onClick={onClose}>
                     <div className="bg-white w-full max-w-md mx-4 rounded-xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-lg">เพิ่มเนื้อหา</h3>
+                            <h3 className="font-bold text-lg">{initialData ? 'แก้ไขเนื้อหา' : 'เพิ่มเนื้อหา'}</h3>
                             <button onClick={onClose}><Icon name="close" /></button>
                         </div>
                         <form onSubmit={handleSubmit} className="space-y-4">
@@ -1084,30 +1092,6 @@
             );
         }
 
-        function ResultScreen({ examState, totalQuestions, onNavigate }) {
-            const isPass = examState.score >= 60;
-            return (
-                <div className="flex flex-col min-h-screen bg-white">
-                     <div className="flex items-center p-4 border-b border-slate-100">
-                        <button onClick={() => onNavigate('home')} className="mr-auto"><Icon name="close" className="text-[#111418]" /></button>
-                        <h2 className="text-lg font-bold flex-1 text-center pr-6">ผลการสอบ</h2>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
-                         <div className="relative w-48 h-48 flex items-center justify-center mb-6">
-                            <div className="flex flex-col items-center">
-                                <span className="text-slate-500 text-sm font-medium">คะแนนรวม</span>
-                                <span className="text-5xl font-bold text-[#111418]">{examState.score}</span>
-                                <span className="text-sm text-slate-400">/ 100</span>
-                            </div>
-                        </div>
-                        <h2 className="text-2xl font-bold text-[#111418] mb-2">{isPass ? 'ยินดีด้วย!' : 'พยายามใหม่นะ'}</h2>
-                        <p className="text-slate-500 mb-8">{isPass ? 'คุณผ่านเกณฑ์การทดสอบ' : 'คุณยังไม่ผ่านเกณฑ์ 60%'}</p>
-                        <button onClick={() => onNavigate('home')} className="w-full max-w-xs h-12 flex items-center justify-center rounded-xl bg-primary text-white font-bold hover:bg-blue-600">กลับหน้าหลัก</button>
-                    </div>
-                </div>
-            )
-        }
-
         function QuestionEditorModal({ question, onClose, onSave }) {
             const [data, setData] = useState(question ? {...question} : {
                 question: '',
@@ -1159,19 +1143,20 @@
         }
 
         function AdminExamScreen({ onNavigate }) {
-            const [activeTab, setActiveTab] = useState('exams'); // exams, videos, summaries
+            const [activeTab, setActiveTab] = useState('exams');
             const [viewMode, setViewMode] = useState('list');
             
-            // Data States
             const [exams, setExams] = useState([]);
-            const [contentItems, setContentItems] = useState([]); // For videos and summaries
+            const [contentItems, setContentItems] = useState([]);
             
-            // Editor States
             const [editorData, setEditorData] = useState({ id: null, title: '', questions: [] });
             const [isUploading, setIsUploading] = useState(false);
             const [editingQuestionIndex, setEditingQuestionIndex] = useState(null);
             const [showQuestionModal, setShowQuestionModal] = useState(false);
+            
+            const [editingContent, setEditingContent] = useState(null);
             const [showContentModal, setShowContentModal] = useState(false);
+            
             const [loading, setLoading] = useState(true);
 
             useEffect(() => {
@@ -1272,11 +1257,21 @@
             };
 
             // --- Handlers for Content (Videos/Summaries) ---
+            const handleEditContent = (item) => {
+                setEditingContent(item);
+                setShowContentModal(true);
+            };
+
             const handleSaveContent = async (data) => {
                 const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
                 try {
-                    await db.collection(collectionName).add(data);
+                    if (editingContent) {
+                        await db.collection(collectionName).doc(editingContent.id).update(data);
+                    } else {
+                        await db.collection(collectionName).add(data);
+                    }
                     setShowContentModal(false);
+                    setEditingContent(null);
                 } catch (error) {
                     alert('เกิดข้อผิดพลาดในการบันทึก');
                 }
@@ -1309,7 +1304,7 @@
                                             </button>
                                         </>
                                     ) : (
-                                        <button onClick={() => setShowContentModal(true)} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
+                                        <button onClick={() => { setEditingContent(null); setShowContentModal(true); }} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
                                             <Icon name="add" className="text-base" /> เพิ่ม{activeTab === 'videos' ? 'วิดีโอ' : 'สรุป'}
                                         </button>
                                     )}
@@ -1349,7 +1344,10 @@
                                             <p className="text-xs text-slate-500 truncate max-w-[200px]">{item.url}</p>
                                         </div>
                                     </div>
-                                    <button onClick={() => handleDeleteContent(item.id)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Icon name="delete" /></button>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleEditContent(item)} className="p-2 text-slate-400 hover:text-admin-primary bg-slate-50 rounded-lg"><Icon name="edit" /></button>
+                                        <button onClick={() => handleDeleteContent(item.id)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Icon name="delete" /></button>
+                                    </div>
                                 </div>
                             ))}
 
@@ -1360,9 +1358,10 @@
 
                         {showContentModal && (
                             <AddContentModal 
-                                onClose={() => setShowContentModal(false)} 
+                                onClose={() => { setShowContentModal(false); setEditingContent(null); }} 
                                 onSave={handleSaveContent} 
-                                defaultType={activeTab === 'videos' ? 'video' : 'pdf'} 
+                                defaultType={activeTab === 'videos' ? 'video' : 'pdf'}
+                                initialData={editingContent}
                             />
                         )}
                         <AdminBottomNav active="admin-exams" onNavigate={onNavigate} />
@@ -1525,4 +1524,3 @@
     </script>
 </body>
 </html>
-
