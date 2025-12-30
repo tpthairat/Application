@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Civil Service Exam Prep (Role Management)</title>
+    <title>Civil Service Exam Prep (Fixed)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -27,13 +27,6 @@
                         "display": ["Public Sans", "Noto Sans Thai", "sans-serif"],
                         "body": ["Public Sans", "Noto Sans Thai", "sans-serif"],
                     },
-                    screens: {
-                        'xs': '375px',
-                        'sm': '640px',
-                        'md': '768px',
-                        'lg': '1024px',
-                        'xl': '1280px',
-                    },
                 },
             },
         }
@@ -44,7 +37,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDK (Compat version for simple HTML usage) -->
+    <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -65,26 +58,14 @@
         }
         
         @media (min-width: 768px) {
-            #app-container {
-                max-width: 768px;
-            }
+            #app-container { max-width: 768px; }
         }
         
         @media (min-width: 1024px) {
-            body {
-                padding: 0;
-                display: flex;
-                justify-content: center;
-            }
-             #app-container {
-                max-width: 600px;
-                min-height: 100vh;
-                border-left: 1px solid #e5e7eb;
-                border-right: 1px solid #e5e7eb;
-            }
+            body { padding: 0; display: flex; justify-content: center; }
+            #app-container { max-width: 600px; min-height: 100vh; border-left: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; }
         }
 
-        /* Loading Spinner */
         .spinner {
             border: 3px solid rgba(0, 0, 0, 0.1);
             width: 24px;
@@ -94,6 +75,17 @@
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
+        /* Modal Overlay */
+        .modal-overlay {
+            background-color: rgba(0, 0, 0, 0.5);
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -102,7 +94,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // --- Firebase Configuration ---
+        // --- Firebase Config ---
         const firebaseConfig = {
             apiKey: "AIzaSyDaSXAda-YiHCgsCJzQA_bnPLZKOoOy0Ek",
             authDomain: "application-b08ac.firebaseapp.com",
@@ -120,7 +112,7 @@
         const auth = firebase.auth();
         const db = firebase.firestore();
 
-        // --- Initial Mock Data (Fallback) ---
+        // --- Mock Data ---
         const INITIAL_MOCK_EXAM = {
             title: "แนวข้อสอบ ก.พ. ภาค ก. (ตัวอย่าง)",
             subject: "วิชากฎหมายและระเบียบข้าราชการ",
@@ -129,15 +121,6 @@
                  { id: 1, question: "ข้อใดต่อไปนี้ ไม่ใช่ หลักธรรมาภิบาล?", options: [{ id: 'A', text: "ก. หลักนิติธรรม" }, { id: 'B', text: "ข. หลักคุณธรรม" }, { id: 'C', text: "ค. หลักความลับ" }, { id: 'D', text: "ง. หลักความโปร่งใส" }], correct: 'C', explanation: "หลักความลับไม่ใช่หลักธรรมาภิบาล" }
             ]
         };
-
-        const CATEGORIES = [
-            { id: 1, name: "ภาค ก (ก.พ.)", count: "300 ข้อสอบ", progress: 70, color: "bg-blue-500", icon: "menu_book" },
-            { id: 2, name: "ภาค ข (เฉพาะตำแหน่ง)", count: "450 ข้อสอบ", progress: 15, color: "bg-orange-500", icon: "engineering" },
-            { id: 3, name: "ภาษาอังกฤษ", count: "300 ข้อสอบ", progress: 0, color: "bg-purple-500", icon: "language" },
-            { id: 4, name: "กฎหมาย", count: "200 ข้อสอบ", progress: 45, color: "bg-red-500", icon: "gavel" },
-            { id: 5, name: "ความรู้ทั่วไป", count: "150 ข้อสอบ", progress: 10, color: "bg-blue-400", icon: "newspaper" },
-            { id: 6, name: "ท้องถิ่น", count: "320 ข้อสอบ", progress: 60, color: "bg-teal-500", icon: "apartment" },
-        ];
 
         // --- Helper Components ---
         function Icon({ name, className = "", style = {} }) {
@@ -165,7 +148,6 @@
                 timeRemaining: 0
             });
 
-            // Auth Listener
             useEffect(() => {
                 const unsubscribe = auth.onAuthStateChanged(async (authUser) => {
                     if (authUser) {
@@ -173,11 +155,8 @@
                             const userDoc = await db.collection('users').doc(authUser.uid).get();
                             if (userDoc.exists) {
                                 setUser({ uid: authUser.uid, email: authUser.email, ...userDoc.data() });
-                                if (userDoc.data().role === 'admin') {
-                                    setCurrentScreen('admin-home');
-                                } else {
-                                    setCurrentScreen('home');
-                                }
+                                if (userDoc.data().role === 'admin') setCurrentScreen('admin-home');
+                                else setCurrentScreen('home');
                             } else {
                                 setUser({ uid: authUser.uid, email: authUser.email, role: 'user', name: 'User' });
                                 setCurrentScreen('home');
@@ -217,18 +196,13 @@
             };
 
             const handleAnswer = (questionId, optionId) => {
-                setExamState(prev => ({
-                    ...prev,
-                    answers: { ...prev.answers, [questionId]: optionId }
-                }));
+                setExamState(prev => ({ ...prev, answers: { ...prev.answers, [questionId]: optionId } }));
             };
 
             const submitExam = async () => {
                 let correctCount = 0;
                 selectedExam.questions.forEach(q => {
-                    if (examState.answers[q.id] === q.correct) {
-                        correctCount++;
-                    }
+                    if (examState.answers[q.id] === q.correct) correctCount++;
                 });
                 const scorePercentage = Math.round((correctCount / selectedExam.questions.length) * 100);
                 
@@ -241,16 +215,10 @@
                             date: new Date(),
                             status: scorePercentage >= 60 ? 'pass' : 'fail'
                         });
-                    } catch (e) {
-                        console.error("Error saving exam:", e);
-                    }
+                    } catch (e) { console.error("Error saving exam:", e); }
                 }
 
-                setExamState(prev => ({
-                    ...prev,
-                    isFinished: true,
-                    score: scorePercentage
-                }));
+                setExamState(prev => ({ ...prev, isFinished: true, score: scorePercentage }));
                 navigate('result');
             };
 
@@ -275,16 +243,12 @@
 
             return (
                 <div id="app-container">
-                    {/* User Screens */}
                     {currentScreen === 'login' && <LoginScreen onNavigate={navigate} />}
                     {currentScreen === 'register' && <RegisterScreen onNavigate={navigate} />}
-                    
                     {currentScreen === 'home' && <HomeScreen user={user} onNavigate={navigate} onStartExam={startExam} />}
                     {currentScreen === 'category' && <CategoryScreen onNavigate={navigate} onStartExam={startExam} />}
                     {currentScreen === 'history' && <HistoryScreen user={user} onNavigate={navigate} />}
                     {currentScreen === 'profile' && <ProfileScreen user={user} onNavigate={navigate} onLogout={handleLogout} />}
-                    
-                    {/* Exam Screens */}
                     {currentScreen === 'exam' && selectedExam && (
                         <ExamScreen 
                             examData={selectedExam} 
@@ -302,8 +266,6 @@
                             onNavigate={navigate}
                         />
                     )}
-
-                    {/* Admin Screens (Protected) */}
                     {currentScreen === 'admin-home' && user?.role === 'admin' && <AdminHomeScreen user={user} onNavigate={navigate} onLogout={handleLogout} />}
                     {currentScreen === 'admin-exams' && user?.role === 'admin' && <AdminExamScreen onNavigate={navigate} />}
                     {currentScreen === 'admin-users' && user?.role === 'admin' && <AdminUserScreen onNavigate={navigate} currentUser={user} />}
@@ -392,11 +354,10 @@
                 try {
                     const userCredential = await auth.createUserWithEmailAndPassword(email, password);
                     const user = userCredential.user;
-                    // FIX: Always set role as 'user'
                     await db.collection('users').doc(user.uid).set({
                         name: name,
                         email: email,
-                        role: 'user', // Default role is now 'user' only
+                        role: 'user', 
                         createdAt: new Date()
                     });
                 } catch (err) {
@@ -526,261 +487,264 @@
             );
         }
 
-        function CategoryScreen({ onNavigate, onStartExam }) {
-            const [exams, setExams] = useState([]);
+        // --- Question Editor Component ---
+        function QuestionEditorModal({ question, onClose, onSave }) {
+            const [data, setData] = useState(question ? {...question} : {
+                question: '',
+                options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}],
+                correct: 'A',
+                explanation: ''
+            });
 
-            useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setExams(data);
-                });
-                return () => unsubscribe();
-            }, []);
+            const handleOptionChange = (idx, val) => {
+                const newOpts = [...data.options];
+                newOpts[idx].text = val;
+                setData({...data, options: newOpts});
+            };
 
             return (
-                <div className="flex flex-col min-h-screen bg-[#f6f7f8]">
-                    <div className="sticky top-0 z-20 flex items-center bg-white/90 backdrop-blur-md p-4 border-b border-slate-100">
-                        <button onClick={() => onNavigate('home')} className="mr-3">
-                            <Icon name="arrow_back" className="text-[#111418]" />
-                        </button>
-                        <h2 className="text-lg font-bold text-[#111418]">เลือกข้อสอบ</h2>
-                    </div>
-                    <div className="p-4 max-w-4xl mx-auto w-full">
-                        {exams.length === 0 ? (
-                            <div className="text-center py-10 text-slate-500">
-                                <Icon name="sentiment_dissatisfied" className="text-4xl mb-2" />
-                                <p>ยังไม่มีข้อสอบในระบบ</p>
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="bg-white w-full max-w-lg mx-4 rounded-xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg">{question ? 'แก้ไขข้อสอบ' : 'เพิ่มข้อสอบใหม่'}</h3>
+                            <button onClick={onClose}><Icon name="close" /></button>
+                        </div>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-sm font-medium">โจทย์</label>
+                                <textarea className="w-full border p-2 rounded-lg" rows="3" value={data.question} onChange={e => setData({...data, question: e.target.value})}></textarea>
                             </div>
-                        ) : (
-                            <div className="flex flex-col gap-3">
-                                {exams.map((exam) => (
-                                    <div key={exam.id} onClick={() => onStartExam(exam)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between">
-                                        <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-primary">
-                                                <Icon name="description" />
-                                            </div>
-                                            <div>
-                                                <h4 className="font-bold text-[#111418] mb-1">{exam.title}</h4>
-                                                <p className="text-xs text-slate-500">{exam.questions?.length || 0} ข้อ • {Math.floor((exam.timeLimit || 1800) / 60)} นาที</p>
-                                            </div>
-                                        </div>
-                                        <Icon name="chevron_right" className="text-slate-400" />
+                            <div>
+                                <label className="text-sm font-medium">ตัวเลือก</label>
+                                {data.options.map((opt, i) => (
+                                    <div key={i} className="flex gap-2 items-center mt-1">
+                                        <span className="w-6 text-center font-bold">{opt.id}</span>
+                                        <input className="flex-1 border p-2 rounded-lg" value={opt.text} onChange={e => handleOptionChange(i, e.target.value)} />
+                                        <input type="radio" name="correct" checked={data.correct === opt.id} onChange={() => setData({...data, correct: opt.id})} className="w-4 h-4" />
                                     </div>
                                 ))}
                             </div>
-                        )}
+                            <div>
+                                <label className="text-sm font-medium">คำอธิบายเฉลย</label>
+                                <textarea className="w-full border p-2 rounded-lg" rows="2" value={data.explanation} onChange={e => setData({...data, explanation: e.target.value})}></textarea>
+                            </div>
+                        </div>
+                        <div className="mt-6 flex gap-2">
+                            <button onClick={() => onSave(data)} className="flex-1 bg-primary text-white py-2 rounded-lg font-bold">บันทึก</button>
+                            <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 py-2 rounded-lg font-bold">ยกเลิก</button>
+                        </div>
                     </div>
-                    <BottomNav active="category" onNavigate={onNavigate} />
                 </div>
             );
         }
 
         function AdminExamScreen({ onNavigate }) {
+            const [viewMode, setViewMode] = useState('list'); // list, editor
             const [exams, setExams] = useState([]);
+            const [editorData, setEditorData] = useState({ id: null, title: '', questions: [] });
             const [isUploading, setIsUploading] = useState(false);
+            const [editingQuestionIndex, setEditingQuestionIndex] = useState(null); // null for new, index for edit
+            const [showQuestionModal, setShowQuestionModal] = useState(false);
 
             useEffect(() => {
                 const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setExams(data);
+                    setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                 });
                 return () => unsubscribe();
             }, []);
 
-            const handleDelete = async (id) => {
+            const handleDeleteExam = async (id) => {
                 if(confirm('คุณต้องการลบชุดข้อสอบนี้ใช่หรือไม่?')) {
-                    try {
-                        await db.collection('exams').doc(id).delete();
-                    } catch (e) {
-                        alert('เกิดข้อผิดพลาดในการลบ: ' + e.message);
-                    }
+                    try { await db.collection('exams').doc(id).delete(); } 
+                    catch (e) { alert('เกิดข้อผิดพลาดในการลบ'); }
                 }
-            }
+            };
+
+            const handleEditExam = (exam) => {
+                setEditorData({ ...exam });
+                setViewMode('editor');
+            };
+
+            const handleCreateExam = () => {
+                setEditorData({ id: null, title: 'ชุดข้อสอบใหม่', questions: [] });
+                setViewMode('editor');
+            };
 
             const handleFileUpload = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
-
                 setIsUploading(true);
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const text = e.target.result;
                     const lines = text.split('\n');
                     const newQuestions = [];
-                    let parseErrors = 0;
-
                     for (let line of lines) {
                         line = line.trim();
                         if (!line) continue;
                         const matches = line.match(/^"(.+)","(.+)","(.+)","(.+)","(.+)","(.+)","(.+)"$/);
-                        
                         if (matches && matches.length === 8) { 
                             newQuestions.push({
                                 question: matches[1],
-                                options: [
-                                    { id: 'A', text: matches[2] },
-                                    { id: 'B', text: matches[3] },
-                                    { id: 'C', text: matches[4] },
-                                    { id: 'D', text: matches[5] }
-                                ],
-                                correct: matches[6], 
-                                explanation: matches[7],
-                                id: Date.now() + Math.random()
+                                options: [{ id: 'A', text: matches[2] }, { id: 'B', text: matches[3] }, { id: 'C', text: matches[4] }, { id: 'D', text: matches[5] }],
+                                correct: matches[6], explanation: matches[7], id: Date.now() + Math.random()
                             });
-                        } else {
-                            parseErrors++;
                         }
                     }
-
-                    if (newQuestions.length > 0) {
-                        try {
-                            const newExam = {
-                                title: `ชุดข้อสอบนำเข้า ${new Date().toLocaleString('th-TH')}`,
-                                subject: "ทั่วไป",
-                                timeLimit: newQuestions.length * 60, 
-                                questions: newQuestions,
-                                createdAt: new Date()
-                            };
-                            await db.collection('exams').add(newExam);
-                            alert(`นำเข้าสำเร็จ ${newQuestions.length} ข้อ!`);
-                        } catch(err) {
-                            console.error("Error saving:", err);
-                            alert("เกิดข้อผิดพลาดในการบันทึกข้อมูล");
-                        }
-                    } else {
-                        alert("ไม่พบข้อมูลที่ถูกต้อง กรุณาตรวจสอบรูปแบบไฟล์ CSV");
-                    }
+                    setEditorData({
+                        id: null,
+                        title: `ชุดข้อสอบนำเข้า ${new Date().toLocaleString('th-TH')}`,
+                        questions: newQuestions
+                    });
+                    setViewMode('editor');
                     setIsUploading(false);
+                    event.target.value = null; // Reset file input
                 };
                 reader.readAsText(file);
             };
 
-            return (
-                 <div className="pb-24 bg-[#f6f7f8] min-h-screen">
-                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
-                        <h2 className="text-lg font-bold text-[#111418]">จัดการข้อสอบ</h2>
-                        <div className="flex gap-2">
-                             <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" disabled={isUploading} />
-                            <label htmlFor="csv-upload" className={`bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 cursor-pointer hover:bg-green-700 transition-colors ${isUploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                {isUploading ? <div className="spinner border-white border-b-transparent h-4 w-4"></div> : <Icon name="upload_file" className="text-base" />}
-                                {isUploading ? ' กำลังอัปโหลด...' : ' นำเข้า CSV'}
-                            </label>
-                        </div>
-                    </div>
+            const saveExamToFirestore = async () => {
+                try {
+                    const dataToSave = {
+                        title: editorData.title,
+                        questions: editorData.questions,
+                        timeLimit: editorData.questions.length * 60,
+                        subject: "ทั่วไป",
+                        createdAt: editorData.createdAt || new Date()
+                    };
 
-                    <div className="p-4 max-w-4xl mx-auto w-full">
-                        <div className="flex flex-col gap-3">
-                            <div className="bg-blue-50 border border-blue-200 p-3 rounded-lg text-sm text-blue-800 mb-2">
-                                <p className="font-bold mb-1"><Icon name="info" className="text-sm align-middle" /> รูปแบบไฟล์ CSV:</p>
-                                <code className="bg-white px-2 py-1 rounded border border-blue-100 block overflow-x-auto text-xs">
-                                    "โจทย์","ก","ข","ค","ง","เฉลย(A/B/C/D)","คำอธิบาย"
-                                </code>
+                    if (editorData.id) {
+                        await db.collection('exams').doc(editorData.id).update(dataToSave);
+                    } else {
+                        await db.collection('exams').add(dataToSave);
+                    }
+                    alert('บันทึกสำเร็จ');
+                    setViewMode('list');
+                } catch (e) {
+                    console.error(e);
+                    alert('บันทึกไม่สำเร็จ');
+                }
+            };
+
+            const handleSaveQuestion = (qData) => {
+                const newQuestions = [...editorData.questions];
+                if (editingQuestionIndex !== null) {
+                    newQuestions[editingQuestionIndex] = qData;
+                } else {
+                    newQuestions.push({ ...qData, id: Date.now() + Math.random() });
+                }
+                setEditorData({ ...editorData, questions: newQuestions });
+                setShowQuestionModal(false);
+            };
+
+            const handleDeleteQuestion = (idx) => {
+                if (confirm('ลบข้อนี้?')) {
+                    const newQuestions = editorData.questions.filter((_, i) => i !== idx);
+                    setEditorData({ ...editorData, questions: newQuestions });
+                }
+            };
+
+            // --- Render: List Mode ---
+            if (viewMode === 'list') {
+                return (
+                    <div className="pb-24 bg-[#f6f7f8] min-h-screen">
+                        <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
+                            <h2 className="text-lg font-bold text-[#111418]">จัดการข้อสอบ</h2>
+                            <div className="flex gap-2">
+                                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" disabled={isUploading} />
+                                <label htmlFor="csv-upload" className={`bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 cursor-pointer hover:bg-green-700 transition-colors ${isUploading ? 'opacity-50' : ''}`}>
+                                    {isUploading ? '...' : <Icon name="upload_file" className="text-base" />} CSV
+                                </label>
+                                <button onClick={handleCreateExam} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
+                                    <Icon name="add" className="text-base" /> สร้าง
+                                </button>
                             </div>
-
-                            {exams.length === 0 && <div className="text-center py-10 text-slate-400">ยังไม่มีข้อสอบ</div>}
-
+                        </div>
+                        <div className="p-4 max-w-4xl mx-auto w-full flex flex-col gap-3">
                             {exams.map(exam => (
                                 <div key={exam.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                     <div className="flex gap-3">
-                                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shrink-0">
-                                            <Icon name="description" />
-                                        </div>
+                                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shrink-0"><Icon name="description" /></div>
                                         <div>
                                             <h4 className="font-bold text-[#111418]">{exam.title}</h4>
-                                            <p className="text-xs text-slate-500">{exam.questions?.length || 0} ข้อ • สร้างเมื่อ {exam.createdAt?.toDate ? exam.createdAt.toDate().toLocaleDateString('th-TH') : 'N/A'}</p>
+                                            <p className="text-xs text-slate-500">{exam.questions?.length || 0} ข้อ • {exam.createdAt?.toDate ? exam.createdAt.toDate().toLocaleDateString('th-TH') : 'N/A'}</p>
                                         </div>
                                     </div>
                                     <div className="flex gap-2 self-end sm:self-center">
-                                        <button onClick={() => handleDelete(exam.id)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg transition-colors"><Icon name="delete" /></button>
+                                        <button onClick={() => handleEditExam(exam)} className="p-2 text-slate-400 hover:text-admin-primary bg-slate-50 rounded-lg"><Icon name="edit" /></button>
+                                        <button onClick={() => handleDeleteExam(exam.id)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Icon name="delete" /></button>
                                     </div>
                                 </div>
                             ))}
                         </div>
+                        <AdminBottomNav active="admin-exams" onNavigate={onNavigate} />
                     </div>
-                    <AdminBottomNav active="admin-exams" onNavigate={onNavigate} />
-                </div>
-            );
-        }
+                );
+            }
 
-        // --- Other Components (Unchanged mostly) ---
-        function HistoryScreen({ user, onNavigate }) {
-            const [history, setHistory] = useState([]);
-            const [loading, setLoading] = useState(true);
-
-            useEffect(() => {
-                if (!user) return;
-                const fetchHistory = async () => {
-                    try {
-                        const snapshot = await db.collection('exam_results')
-                            .where('userId', '==', user.uid)
-                            .orderBy('date', 'desc')
-                            .get();
-                        const data = snapshot.docs.map(doc => {
-                            const d = doc.data();
-                            return { id: doc.id, ...d, dateString: d.date && d.date.toDate ? d.date.toDate().toLocaleDateString('th-TH') : 'N/A' };
-                        });
-                        setHistory(data);
-                    } catch (error) { console.error(error); } finally { setLoading(false); }
-                };
-                fetchHistory();
-            }, [user]);
-
+            // --- Render: Editor Mode ---
             return (
-                <div className="min-h-screen bg-[#f6f7f8] pb-24">
-                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
-                        <button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button>
-                        <h1 className="text-lg font-bold">ประวัติการสอบ</h1>
-                        <button><Icon name="filter_list" className="text-primary" /></button>
+                <div className="bg-[#f6f7f8] min-h-screen flex flex-col">
+                    <div className="sticky top-0 z-20 bg-white p-4 border-b border-slate-100 shadow-sm flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => setViewMode('list')}><Icon name="arrow_back" /></button>
+                            <h2 className="text-lg font-bold">แก้ไขข้อสอบ</h2>
+                        </div>
+                        <button onClick={saveExamToFirestore} className="bg-primary text-white px-4 py-1.5 rounded-lg font-bold shadow-lg shadow-blue-500/30">บันทึกชุดข้อสอบ</button>
                     </div>
-                    {loading ? <LoadingSpinner /> : (
-                        <div className="px-4 py-4 flex flex-col gap-3">
-                            {history.length === 0 ? <div className="text-center text-slate-500 mt-10">ยังไม่มีประวัติการสอบ</div> : history.map((item) => (
-                                <div key={item.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col gap-3">
-                                    <div className="flex justify-between items-start">
-                                        <div className="flex gap-3">
-                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.status === 'pass' ? 'bg-blue-50 text-primary' : 'bg-red-50 text-red-500'}`}><Icon name="description" /></div>
-                                            <div><h4 className="font-bold text-[#111418] text-sm">{item.examTitle}</h4><p className="text-xs text-slate-500">วันที่ {item.dateString}</p></div>
+
+                    <div className="p-4 max-w-4xl mx-auto w-full flex-1 overflow-y-auto pb-24">
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4">
+                            <label className="text-sm font-bold text-slate-500">ชื่อชุดข้อสอบ</label>
+                            <input 
+                                className="w-full text-lg font-bold border-b border-slate-200 py-2 focus:border-primary outline-none bg-transparent"
+                                value={editorData.title}
+                                onChange={e => setEditorData({...editorData, title: e.target.value})}
+                                placeholder="ตั้งชื่อชุดข้อสอบ..."
+                            />
+                        </div>
+
+                        <div className="flex items-center justify-between mb-2 px-1">
+                            <h3 className="font-bold text-slate-700">รายการข้อสอบ ({editorData.questions.length})</h3>
+                            <button onClick={() => { setEditingQuestionIndex(null); setShowQuestionModal(true); }} className="text-primary text-sm font-bold flex items-center gap-1">
+                                <Icon name="add_circle" /> เพิ่มข้อ
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            {editorData.questions.map((q, idx) => (
+                                <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                                    <div className="flex justify-between items-start gap-4">
+                                        <div className="flex-1">
+                                            <div className="flex gap-2">
+                                                <span className="font-bold text-slate-400">{idx + 1}.</span>
+                                                <p className="font-medium text-[#111418]">{q.question}</p>
+                                            </div>
+                                            <p className="text-xs text-green-600 mt-1 ml-6">เฉลย: {q.correct}</p>
                                         </div>
-                                        <span className={`px-2 py-1 rounded-lg text-xs font-bold ${item.status === 'pass' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{item.score}%</span>
+                                        <div className="flex gap-1 shrink-0">
+                                            <button onClick={() => { setEditingQuestionIndex(idx); setShowQuestionModal(true); }} className="p-1.5 text-slate-400 hover:text-admin-primary bg-slate-50 rounded"><Icon name="edit" className="text-sm" /></button>
+                                            <button onClick={() => handleDeleteQuestion(idx)} className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded"><Icon name="delete" className="text-sm" /></button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
                         </div>
-                    )}
-                    <BottomNav active="history" onNavigate={onNavigate} />
-                </div>
-            );
-        }
+                    </div>
 
-        function ProfileScreen({ user, onNavigate, onLogout }) {
-            return (
-                <div className="min-h-screen bg-[#f6f7f8] pb-24">
-                    <div className="bg-white pb-4">
-                        <div className="flex items-center justify-between p-4">
-                            <button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button>
-                            <h2 className="text-lg font-bold">โปรไฟล์</h2>
-                            <div className="w-6"></div>
-                        </div>
-                        <div className="flex flex-col items-center gap-3">
-                            <div className="w-24 h-24 rounded-full bg-slate-200 relative border-4 border-white shadow-md flex items-center justify-center">
-                                <span className="text-4xl text-slate-400 font-bold">{user?.name ? user.name.charAt(0) : 'U'}</span>
-                            </div>
-                            <div className="text-center">
-                                <h3 className="text-xl font-bold text-[#111418]">{user?.name || 'User'}</h3>
-                                <p className="text-sm text-slate-500">{user?.email}</p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="mt-4 px-4">
-                        <button onClick={onLogout} className="w-full py-3 text-red-600 font-bold bg-white rounded-xl shadow-sm border border-slate-200 hover:bg-red-50 transition-colors">ออกจากระบบ</button>
-                    </div>
-                    <BottomNav active="profile" onNavigate={onNavigate} />
+                    {showQuestionModal && (
+                        <QuestionEditorModal 
+                            question={editingQuestionIndex !== null ? editorData.questions[editingQuestionIndex] : null}
+                            onClose={() => setShowQuestionModal(false)}
+                            onSave={handleSaveQuestion}
+                        />
+                    )}
                 </div>
             );
         }
 
         function AdminHomeScreen({ user, onNavigate, onLogout }) {
-            const ADMIN_STATS = [
+             const ADMIN_STATS = [
                 { title: "ผู้ใช้งานทั้งหมด", value: "...", icon: "group", color: "bg-blue-500" },
                 { title: "ข้อสอบในระบบ", value: "...", icon: "library_books", color: "bg-green-500" },
             ];
@@ -804,6 +768,100 @@
                         </div>
                     </main>
                     <AdminBottomNav active="admin-home" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+
+        function AdminUserScreen({ onNavigate, currentUser }) {
+            const [users, setUsers] = useState([]);
+            const [loading, setLoading] = useState(true);
+            useEffect(() => {
+                const unsubscribe = db.collection('users').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+                    setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+            const toggleRole = async (userId, currentRole) => {
+                try { await db.collection('users').doc(userId).update({ role: currentRole === 'admin' ? 'user' : 'admin' }); } 
+                catch (error) { alert("เกิดข้อผิดพลาด"); }
+            };
+            return (
+                <div className="pb-24 bg-[#f6f7f8] min-h-screen">
+                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
+                        <h2 className="text-lg font-bold text-[#111418]">จัดการผู้ใช้</h2><div className="w-8"></div>
+                    </div>
+                    <div className="p-4 max-w-4xl mx-auto w-full">
+                        {loading ? <LoadingSpinner /> : (
+                            <div className="flex flex-col gap-3">
+                                {users.map(user => (
+                                    <div key={user.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                        <div className="flex gap-3 items-center">
+                                            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 shrink-0"><span className="text-lg font-bold">{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</span></div>
+                                            <div><div className="flex items-center gap-2"><h4 className="font-bold text-[#111418]">{user.name || 'User'}</h4>{user.role === 'admin' && <span className="bg-admin-primary/10 text-admin-primary text-[10px] px-2 py-0.5 rounded-full font-bold">Admin</span>}</div><p className="text-xs text-slate-500">{user.email}</p></div>
+                                        </div>
+                                        <div className="flex items-center gap-2 self-end sm:self-center"><button onClick={() => toggleRole(user.id, user.role)} disabled={currentUser && currentUser.uid === user.id} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${currentUser && currentUser.uid === user.id ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : user.role === 'admin' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>{user.role === 'admin' ? 'ถอนสิทธิ์ Admin' : 'ตั้งเป็น Admin'}</button></div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    <AdminBottomNav active="admin-users" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+
+        function CategoryScreen({ onNavigate, onStartExam }) {
+            const [exams, setExams] = useState([]);
+            useEffect(() => {
+                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+                    setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                });
+                return () => unsubscribe();
+            }, []);
+            return (
+                <div className="flex flex-col min-h-screen bg-[#f6f7f8]">
+                    <div className="sticky top-0 z-20 flex items-center bg-white/90 backdrop-blur-md p-4 border-b border-slate-100"><button onClick={() => onNavigate('home')} className="mr-3"><Icon name="arrow_back" className="text-[#111418]" /></button><h2 className="text-lg font-bold text-[#111418]">เลือกข้อสอบ</h2></div>
+                    <div className="p-4 max-w-4xl mx-auto w-full">
+                        {exams.length === 0 ? <div className="text-center py-10 text-slate-500"><Icon name="sentiment_dissatisfied" className="text-4xl mb-2" /><p>ยังไม่มีข้อสอบในระบบ</p></div> : (
+                            <div className="flex flex-col gap-3">{exams.map((exam) => (
+                                <div key={exam.id} onClick={() => onStartExam(exam)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-primary"><Icon name="description" /></div><div><h4 className="font-bold text-[#111418] mb-1">{exam.title}</h4><p className="text-xs text-slate-500">{exam.questions?.length || 0} ข้อ • {Math.floor((exam.timeLimit || 1800) / 60)} นาที</p></div></div><Icon name="chevron_right" className="text-slate-400" /></div>
+                            ))}</div>
+                        )}
+                    </div>
+                    <BottomNav active="category" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+
+        function HistoryScreen({ user, onNavigate }) {
+            const [history, setHistory] = useState([]);
+            const [loading, setLoading] = useState(true);
+            useEffect(() => {
+                if (!user) return;
+                const fetch = async () => {
+                    try {
+                        const snap = await db.collection('exam_results').where('userId', '==', user.uid).orderBy('date', 'desc').get();
+                        setHistory(snap.docs.map(doc => ({ id: doc.id, ...doc.data(), dateString: doc.data().date?.toDate ? doc.data().date.toDate().toLocaleDateString('th-TH') : 'N/A' })));
+                    } catch(e){} finally { setLoading(false); }
+                };
+                fetch();
+            }, [user]);
+            return (
+                <div className="min-h-screen bg-[#f6f7f8] pb-24">
+                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm"><button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button><h1 className="text-lg font-bold">ประวัติการสอบ</h1><div className="w-8"></div></div>
+                    {loading ? <LoadingSpinner /> : <div className="px-4 py-4 flex flex-col gap-3">{history.map(item => (<div key={item.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col gap-3"><div className="flex justify-between items-start"><div className="flex gap-3"><div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.status === 'pass' ? 'bg-blue-50 text-primary' : 'bg-red-50 text-red-500'}`}><Icon name="description" /></div><div><h4 className="font-bold text-[#111418] text-sm">{item.examTitle}</h4><p className="text-xs text-slate-500">วันที่ {item.dateString}</p></div></div><span className={`px-2 py-1 rounded-lg text-xs font-bold ${item.status === 'pass' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{item.score}%</span></div></div>))}</div>}
+                    <BottomNav active="history" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+
+        function ProfileScreen({ user, onNavigate, onLogout }) {
+            return (
+                <div className="min-h-screen bg-[#f6f7f8] pb-24">
+                    <div className="bg-white pb-4"><div className="flex items-center justify-between p-4"><button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button><h2 className="text-lg font-bold">โปรไฟล์</h2><div className="w-6"></div></div><div className="flex flex-col items-center gap-3"><div className="w-24 h-24 rounded-full bg-slate-200 relative border-4 border-white shadow-md flex items-center justify-center"><span className="text-4xl text-slate-400 font-bold">{user?.name ? user.name.charAt(0) : 'U'}</span></div><div className="text-center"><h3 className="text-xl font-bold text-[#111418]">{user?.name || 'User'}</h3><p className="text-sm text-slate-500">{user?.email}</p></div></div></div>
+                    <div className="mt-4 px-4"><button onClick={onLogout} className="w-full py-3 text-red-600 font-bold bg-white rounded-xl shadow-sm border border-slate-200 hover:bg-red-50 transition-colors">ออกจากระบบ</button></div>
+                    <BottomNav active="profile" onNavigate={onNavigate} />
                 </div>
             );
         }
@@ -899,116 +957,14 @@
             )
         }
 
-        function AdminUserScreen({ onNavigate, currentUser }) {
-            const [users, setUsers] = useState([]);
-            const [loading, setLoading] = useState(true);
-
-            useEffect(() => {
-                const unsubscribe = db.collection('users').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setUsers(data);
-                    setLoading(false);
-                });
-                return () => unsubscribe();
-            }, []);
-
-            const toggleRole = async (userId, currentRole) => {
-                const newRole = currentRole === 'admin' ? 'user' : 'admin';
-                try {
-                    await db.collection('users').doc(userId).update({ role: newRole });
-                } catch (error) {
-                    console.error("Error updating role:", error);
-                    alert("เกิดข้อผิดพลาดในการเปลี่ยนสิทธิ์");
-                }
-            };
-
-            return (
-                <div className="pb-24 bg-[#f6f7f8] min-h-screen">
-                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
-                        <h2 className="text-lg font-bold text-[#111418]">จัดการผู้ใช้</h2>
-                         <div className="w-8"></div>
-                    </div>
-
-                    <div className="p-4 max-w-4xl mx-auto w-full">
-                        {loading ? <LoadingSpinner /> : (
-                            <div className="flex flex-col gap-3">
-                                {users.map(user => (
-                                    <div key={user.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                        <div className="flex gap-3 items-center">
-                                            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 shrink-0">
-                                                <span className="text-lg font-bold">{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</span>
-                                            </div>
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <h4 className="font-bold text-[#111418]">{user.name || 'User'}</h4>
-                                                    {user.role === 'admin' && (
-                                                        <span className="bg-admin-primary/10 text-admin-primary text-[10px] px-2 py-0.5 rounded-full font-bold">Admin</span>
-                                                    )}
-                                                </div>
-                                                <p className="text-xs text-slate-500">{user.email}</p>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-2 self-end sm:self-center">
-                                            <button 
-                                                onClick={() => toggleRole(user.id, user.role)} 
-                                                disabled={currentUser && currentUser.uid === user.id}
-                                                className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${
-                                                    currentUser && currentUser.uid === user.id 
-                                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                                                    : user.role === 'admin' 
-                                                        ? 'bg-red-50 text-red-600 hover:bg-red-100' 
-                                                        : 'bg-green-50 text-green-600 hover:bg-green-100'
-                                                }`}
-                                            >
-                                                {user.role === 'admin' ? 'ถอนสิทธิ์ Admin' : 'ตั้งเป็น Admin'}
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                    <AdminBottomNav active="admin-users" onNavigate={onNavigate} />
-                </div>
-            );
-        }
-
         function BottomNav({ active, onNavigate }) {
-            const navItems = [
-                { id: 'home', icon: 'home', label: 'หน้าหลัก' },
-                { id: 'category', icon: 'menu_book', label: 'วิชาสอบ' },
-                { id: 'history', icon: 'bar_chart', label: 'ประวัติ' },
-                { id: 'profile', icon: 'person', label: 'โปรไฟล์' }
-            ];
-            return (
-                <div className="fixed bottom-0 w-full bg-white border-t border-slate-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">
-                    {navItems.map((item) => (
-                        <button key={item.id} onClick={() => onNavigate(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-primary' : 'text-slate-400'}`}>
-                            <Icon name={item.icon} className={active === item.id ? 'fill-current' : ''} style={{ fontVariationSettings: active === item.id ? "'FILL' 1" : "'FILL' 0" }} />
-                            <span className="text-[10px] font-medium">{item.label}</span>
-                        </button>
-                    ))}
-                </div>
-            );
+            const navItems = [{ id: 'home', icon: 'home', label: 'หน้าหลัก' }, { id: 'category', icon: 'menu_book', label: 'วิชาสอบ' }, { id: 'history', icon: 'bar_chart', label: 'ประวัติ' }, { id: 'profile', icon: 'person', label: 'โปรไฟล์' }];
+            return <div className="fixed bottom-0 w-full bg-white border-t border-slate-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">{navItems.map((item) => (<button key={item.id} onClick={() => onNavigate(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-primary' : 'text-slate-400'}`}><Icon name={item.icon} className={active === item.id ? 'fill-current' : ''} style={{ fontVariationSettings: active === item.id ? "'FILL' 1" : "'FILL' 0" }} /><span className="text-[10px] font-medium">{item.label}</span></button>))}</div>;
         }
 
         function AdminBottomNav({ active, onNavigate }) {
-            const navItems = [
-                { id: 'admin-home', icon: 'dashboard', label: 'ภาพรวม' },
-                { id: 'admin-exams', icon: 'library_books', label: 'ข้อสอบ' },
-                { id: 'admin-users', icon: 'group', label: 'ผู้ใช้' },
-                { id: 'home', icon: 'visibility', label: 'ดูหน้าเว็บ' }
-            ];
-            return (
-                <div className="fixed bottom-0 w-full bg-white border-t border-purple-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">
-                    {navItems.map((item) => (
-                        <button key={item.id} onClick={() => onNavigate(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-admin-primary' : 'text-slate-400'}`}>
-                            <Icon name={item.icon} />
-                            <span className="text-[10px] font-medium">{item.label}</span>
-                        </button>
-                    ))}
-                </div>
-            );
+            const navItems = [{ id: 'admin-home', icon: 'dashboard', label: 'ภาพรวม' }, { id: 'admin-exams', icon: 'library_books', label: 'ข้อสอบ' }, { id: 'admin-users', icon: 'group', label: 'ผู้ใช้' }, { id: 'home', icon: 'visibility', label: 'ดูหน้าเว็บ' }];
+            return <div className="fixed bottom-0 w-full bg-white border-t border-purple-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">{navItems.map((item) => (<button key={item.id} onClick={() => onNavigate(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-admin-primary' : 'text-slate-400'}`}><Icon name={item.icon} /><span className="text-[10px] font-medium">{item.label}</span></button>))}</div>;
         }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
