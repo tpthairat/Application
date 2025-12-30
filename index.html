@@ -1,0 +1,801 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Civil Service Exam Prep</title>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Material Symbols (Icons) -->
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#137fec",
+                        "admin-primary": "#7c3aed", // สีม่วงสำหรับ Admin
+                        "background-light": "#f6f7f8",
+                        "background-dark": "#101922",
+                    },
+                    fontFamily: {
+                        "display": ["Public Sans", "Noto Sans Thai", "sans-serif"],
+                        "body": ["Public Sans", "Noto Sans Thai", "sans-serif"],
+                    },
+                    screens: {
+                        'xs': '375px',
+                        'sm': '640px',
+                        'md': '768px',
+                        'lg': '1024px',
+                        'xl': '1280px',
+                    },
+                },
+            },
+        }
+    </script>
+
+    <!-- React & ReactDOM & Babel -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { font-family: 'Public Sans', 'Noto Sans Thai', sans-serif; background-color: #f3f4f6; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Device Simulation Container */
+        #app-container {
+            max-width: 100%;
+            margin: 0 auto;
+            min-height: 100vh;
+            background-color: white;
+            position: relative;
+            box-shadow: 0 0 20px rgba(0,0,0,0.05);
+        }
+        
+        @media (min-width: 768px) {
+            #app-container {
+                max-width: 768px; /* Tablet Size */
+            }
+        }
+        
+        @media (min-width: 1024px) {
+            body {
+                padding: 0;
+                display: flex;
+                justify-content: center;
+            }
+             #app-container {
+                max-width: 600px; /* Mobile View on Desktop */
+                min-height: 100vh;
+                border-left: 1px solid #e5e7eb;
+                border-right: 1px solid #e5e7eb;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div id="root" class="w-full"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Mock Data ---
+        const MOCK_EXAM_DATA = {
+            title: "แนวข้อสอบ ก.พ. ภาค ก.",
+            subject: "วิชากฎหมายและระเบียบข้าราชการ",
+            timeLimit: 30 * 60,
+            questions: [
+                {
+                    id: 1,
+                    question: "ข้อใดต่อไปนี้ ไม่ใช่ หลักธรรมาภิบาลของการบริหารกิจการบ้านเมืองที่ดี?",
+                    options: [
+                        { id: 'A', text: "ก. หลักนิติธรรม" },
+                        { id: 'B', text: "ข. หลักคุณธรรม" },
+                        { id: 'C', text: "ค. หลักความลับ" },
+                        { id: 'D', text: "ง. หลักความโปร่งใส" }
+                    ],
+                    correct: 'C'
+                },
+                {
+                    id: 2,
+                    question: "บุคคลใดเป็นผู้รักษาการตามพระราชบัญญัติระเบียบบริหารราชการแผ่นดิน?",
+                    options: [
+                        { id: 'A', text: "ก. นายกรัฐมนตรี" },
+                        { id: 'B', text: "ข. รัฐมนตรีว่าการกระทรวงมหาดไทย" },
+                        { id: 'C', text: "ค. ประธานรัฐสภา" },
+                        { id: 'D', text: "ง. ปลัดสำนักนายกรัฐมนตรี" }
+                    ],
+                    correct: 'A'
+                },
+                {
+                    id: 3,
+                    question: "การแบ่งส่วนราชการภายในกรม จะต้องตราเป็นกฎหมายใด?",
+                    options: [
+                        { id: 'A', text: "ก. พระราชบัญญัติ" },
+                        { id: 'B', text: "ข. พระราชกฤษฎีกา" },
+                        { id: 'C', text: "ค. กฎกระทรวง" },
+                        { id: 'D', text: "ง. ประกาศกระทรวง" }
+                    ],
+                    correct: 'C'
+                }
+            ]
+        };
+
+        const CATEGORIES = [
+            { id: 1, name: "ภาค ก (ก.พ.)", count: "300 ข้อสอบ", progress: 70, color: "bg-blue-500", icon: "menu_book" },
+            { id: 2, name: "ภาค ข (เฉพาะตำแหน่ง)", count: "450 ข้อสอบ", progress: 15, color: "bg-orange-500", icon: "engineering" },
+            { id: 3, name: "ภาษาอังกฤษ", count: "300 ข้อสอบ", progress: 0, color: "bg-purple-500", icon: "language" },
+            { id: 4, name: "กฎหมาย", count: "200 ข้อสอบ", progress: 45, color: "bg-red-500", icon: "gavel" },
+            { id: 5, name: "ความรู้ทั่วไป", count: "150 ข้อสอบ", progress: 10, color: "bg-blue-400", icon: "newspaper" },
+            { id: 6, name: "ท้องถิ่น", count: "320 ข้อสอบ", progress: 60, color: "bg-teal-500", icon: "apartment" },
+        ];
+
+        const ADMIN_STATS = [
+            { title: "ผู้ใช้งานทั้งหมด", value: "15,420", icon: "group", color: "bg-blue-500" },
+            { title: "ข้อสอบในระบบ", value: "1,250", icon: "library_books", color: "bg-green-500" },
+            { title: "รอตรวจสอบ", value: "45", icon: "pending_actions", color: "bg-orange-500" },
+            { title: "รายได้เดือนนี้", value: "฿125k", icon: "payments", color: "bg-purple-500" },
+        ];
+
+        // --- Components ---
+
+        function Icon({ name, className = "", style = {} }) {
+            return <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>;
+        }
+
+        function App() {
+            const [currentScreen, setCurrentScreen] = useState('login');
+            const [userRole, setUserRole] = useState('user'); // 'user' or 'admin'
+            const [examState, setExamState] = useState({
+                answers: {},
+                currentQuestionIndex: 0,
+                isFinished: false,
+                score: 0,
+                timeRemaining: MOCK_EXAM_DATA.timeLimit
+            });
+
+            const navigate = (screen) => {
+                window.scrollTo(0, 0);
+                setCurrentScreen(screen);
+            };
+
+            const handleLogin = (username) => {
+                if (username.toLowerCase().includes('admin')) {
+                    setUserRole('admin');
+                    navigate('admin-home');
+                } else {
+                    setUserRole('user');
+                    navigate('home');
+                }
+            };
+
+            const startExam = () => {
+                setExamState({
+                    answers: {},
+                    currentQuestionIndex: 0,
+                    isFinished: false,
+                    score: 0,
+                    timeRemaining: MOCK_EXAM_DATA.timeLimit
+                });
+                navigate('exam');
+            };
+
+            const handleAnswer = (questionId, optionId) => {
+                setExamState(prev => ({
+                    ...prev,
+                    answers: { ...prev.answers, [questionId]: optionId }
+                }));
+            };
+
+            const submitExam = () => {
+                let correctCount = 0;
+                MOCK_EXAM_DATA.questions.forEach(q => {
+                    if (examState.answers[q.id] === q.correct) {
+                        correctCount++;
+                    }
+                });
+                const scorePercentage = Math.round((correctCount / MOCK_EXAM_DATA.questions.length) * 100);
+                
+                setExamState(prev => ({
+                    ...prev,
+                    isFinished: true,
+                    score: scorePercentage
+                }));
+                navigate('result');
+            };
+
+            useEffect(() => {
+                let interval;
+                if (currentScreen === 'exam' && !examState.isFinished && examState.timeRemaining > 0) {
+                    interval = setInterval(() => {
+                        setExamState(prev => {
+                            if (prev.timeRemaining <= 1) {
+                                clearInterval(interval);
+                                submitExam();
+                                return { ...prev, timeRemaining: 0 };
+                            }
+                            return { ...prev, timeRemaining: prev.timeRemaining - 1 };
+                        });
+                    }, 1000);
+                }
+                return () => clearInterval(interval);
+            }, [currentScreen, examState.isFinished]);
+
+            return (
+                <div id="app-container">
+                    {/* User Screens */}
+                    {currentScreen === 'login' && <LoginScreen onLogin={handleLogin} onNavigate={navigate} />}
+                    {currentScreen === 'register' && <RegisterScreen onNavigate={navigate} />}
+                    {currentScreen === 'home' && <HomeScreen onNavigate={navigate} onStartExam={startExam} />}
+                    {currentScreen === 'category' && <CategoryScreen onNavigate={navigate} />}
+                    {currentScreen === 'history' && <HistoryScreen onNavigate={navigate} />}
+                    {currentScreen === 'profile' && <ProfileScreen onNavigate={navigate} />}
+                    
+                    {/* Exam Screens */}
+                    {currentScreen === 'exam' && (
+                        <ExamScreen 
+                            examData={MOCK_EXAM_DATA} 
+                            examState={examState} 
+                            onAnswer={handleAnswer} 
+                            onSubmit={submitExam}
+                            onNavigate={navigate}
+                            setExamState={setExamState}
+                        />
+                    )}
+                    {currentScreen === 'result' && (
+                        <ResultScreen 
+                            examState={examState} 
+                            totalQuestions={MOCK_EXAM_DATA.questions.length}
+                            onNavigate={navigate}
+                            onRetry={startExam}
+                        />
+                    )}
+
+                    {/* Admin Screens */}
+                    {currentScreen === 'admin-home' && <AdminHomeScreen onNavigate={navigate} />}
+                    {currentScreen === 'admin-exams' && <AdminExamScreen onNavigate={navigate} />}
+                    {currentScreen === 'admin-users' && <AdminUserScreen onNavigate={navigate} />}
+                </div>
+            );
+        }
+
+        // --- User Screens ---
+
+        function LoginScreen({ onLogin, onNavigate }) {
+            const [username, setUsername] = useState('admin');
+            const [showPassword, setShowPassword] = useState(false);
+            
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen px-6 relative overflow-hidden bg-white">
+                    <div className="absolute top-[-10%] right-[-5%] w-72 h-72 bg-primary/10 rounded-full blur-3xl"></div>
+                    <div className="absolute bottom-[-10%] left-[-5%] w-72 h-72 bg-blue-400/10 rounded-full blur-3xl"></div>
+                    
+                    <div className="w-full max-w-sm z-10">
+                        <div className="flex flex-col items-center mb-10">
+                            <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-lg shadow-blue-500/20 mb-4 transform -rotate-3 hover:rotate-0 transition-transform duration-300">
+                                <Icon name="history_edu" className="text-white text-4xl" />
+                            </div>
+                            <h1 className="text-2xl font-bold text-[#111418]">เข้าสู่ระบบ</h1>
+                            <p className="text-slate-500 text-sm mt-2">เตรียมตัวสอบข้าราชการไปกับเรา</p>
+                            <p className="text-xs text-primary mt-1 bg-blue-50 px-2 py-1 rounded">Tip: ใช้ user 'admin' เพื่อเข้าหลังบ้าน</p>
+                        </div>
+
+                        <form className="flex flex-col gap-5" onSubmit={(e) => { e.preventDefault(); onLogin(username); }}>
+                            <div className="space-y-1.5">
+                                <label className="text-sm font-medium text-slate-700 ml-1">อีเมลหรือชื่อผู้ใช้</label>
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                        <Icon name="person" className="text-slate-400 group-focus-within:text-primary transition-colors" />
+                                    </div>
+                                    <input 
+                                        className="block w-full rounded-2xl border-0 py-3.5 pl-12 text-[#111418] shadow-sm ring-1 ring-inset ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-primary bg-white" 
+                                        placeholder="Username" 
+                                        value={username}
+                                        onChange={(e) => setUsername(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            
+                            <div className="space-y-1.5">
+                                <div className="flex justify-between items-center ml-1">
+                                    <label className="text-sm font-medium text-slate-700">รหัสผ่าน</label>
+                                </div>
+                                <div className="relative group">
+                                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                                        <Icon name="lock" className="text-slate-400 group-focus-within:text-primary transition-colors" />
+                                    </div>
+                                    <input 
+                                        type={showPassword ? "text" : "password"}
+                                        className="block w-full rounded-2xl border-0 py-3.5 pl-12 pr-12 text-[#111418] shadow-sm ring-1 ring-inset ring-slate-200 placeholder:text-slate-400 focus:ring-2 focus:ring-inset focus:ring-primary bg-white" 
+                                        placeholder="••••••••" 
+                                        defaultValue="password"
+                                    />
+                                    <button 
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600 cursor-pointer"
+                                    >
+                                        <Icon name={showPassword ? "visibility" : "visibility_off"} />
+                                    </button>
+                                </div>
+                                <div className="flex justify-end mt-1">
+                                    <button type="button" className="text-xs font-medium text-slate-500 hover:text-primary transition-colors">ลืมรหัสผ่าน?</button>
+                                </div>
+                            </div>
+
+                            <button type="submit" className="w-full rounded-2xl bg-primary px-3.5 py-3.5 text-base font-bold text-white shadow-lg shadow-blue-500/30 hover:bg-blue-600 active:scale-[0.98] transition-all mt-2">
+                                เข้าสู่ระบบ
+                            </button>
+                        </form>
+
+                         <div className="mt-8 flex flex-col items-center gap-6">
+                            <div className="relative w-full">
+                                <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-200"></div></div>
+                                <div className="relative flex justify-center"><span className="bg-white px-2 text-xs text-slate-400">หรือ</span></div>
+                            </div>
+                            <p className="text-center text-sm text-slate-500">
+                                ยังไม่มีบัญชีสมาชิก?
+                                <button onClick={() => onNavigate('register')} className="font-bold text-primary hover:text-blue-600 transition-colors ml-1">สมัครสมาชิก</button>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function RegisterScreen({ onNavigate }) {
+            return (
+                <div className="min-h-screen bg-white flex flex-col">
+                    <div className="flex items-center p-4">
+                        <button onClick={() => onNavigate('login')} className="w-10 h-10 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors">
+                            <Icon name="arrow_back" className="text-slate-800" />
+                        </button>
+                    </div>
+                    <div className="flex flex-col items-center px-6 pt-2 pb-6">
+                        <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mb-4 text-primary">
+                            <Icon name="person_add" className="text-4xl" />
+                        </div>
+                        <h1 className="text-2xl font-bold text-[#111418]">สร้างบัญชีผู้ใช้</h1>
+                        <p className="text-slate-500 mt-2 text-center">เริ่มต้นเตรียมสอบข้าราชการไปกับเรา</p>
+                    </div>
+                    <div className="px-6 pb-6 flex flex-col gap-4 max-w-md mx-auto w-full">
+                         {/* Mock Fields */}
+                        <div className="space-y-1">
+                            <label className="text-base font-medium text-[#111418]">ชื่อ-นามสกุล</label>
+                            <input className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none" placeholder="สมชาย ใจดี" />
+                        </div>
+                        {/* ... more fields ... */}
+                        <button onClick={() => onNavigate('home')} className="w-full h-12 bg-primary text-white rounded-xl font-bold text-base shadow-lg shadow-blue-500/20 hover:bg-blue-600 active:scale-[0.98] transition-all">
+                            สมัครสมาชิก
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
+        function HomeScreen({ onNavigate, onStartExam }) {
+            return (
+                <div className="pb-24 bg-[#f6f7f8] min-h-screen">
+                    <header className="flex items-center justify-between bg-white p-4 sticky top-0 z-10 shadow-sm">
+                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => onNavigate('profile')}>
+                             <div className="w-10 h-10 rounded-full bg-slate-200 border-2 border-primary/20 flex items-center justify-center overflow-hidden">
+                                <Icon name="person" className="text-slate-500" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-xs text-slate-500 font-medium">ยินดีต้อนรับกลับ</span>
+                                <h2 className="text-lg font-bold leading-tight">สวัสดี, สมชาย!</h2>
+                            </div>
+                        </div>
+                        <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-50 relative transition-colors">
+                            <Icon name="notifications" className="text-[#111418]" />
+                            <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+                        </button>
+                    </header>
+
+                    <main className="flex flex-col gap-6 px-4 pt-6 max-w-2xl mx-auto w-full">
+                        {/* Progress Card */}
+                        <div className="bg-primary rounded-2xl p-5 shadow-lg shadow-blue-500/20 text-white relative overflow-hidden">
+                             <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-white/10 blur-2xl"></div>
+                             <div className="relative z-10">
+                                <h3 className="text-lg font-bold mb-1">ความคืบหน้า</h3>
+                                <div className="flex items-end gap-4 mb-2">
+                                    <span className="text-4xl font-bold">65%</span>
+                                    <span className="text-sm text-blue-100 mb-1.5">ของหลักสูตร</span>
+                                </div>
+                                <div className="w-full bg-black/20 rounded-full h-2.5 mb-4 overflow-hidden">
+                                    <div className="bg-white h-2.5 rounded-full" style={{ width: '65%' }}></div>
+                                </div>
+                             </div>
+                        </div>
+
+                        {/* Quick Actions - Grid Responsive */}
+                        <div className="grid grid-cols-4 sm:grid-cols-4 gap-4">
+                             {[
+                                { label: 'เริ่มสอบ', icon: 'play_circle', color: 'bg-blue-50 text-primary', action: onStartExam },
+                                { label: 'ทบทวน', icon: 'menu_book', color: 'bg-orange-50 text-orange-500', action: () => onNavigate('category') },
+                                { label: 'ควิซ', icon: 'quiz', color: 'bg-purple-50 text-purple-500', action: () => {} },
+                                { label: 'แผนการ', icon: 'map', color: 'bg-green-50 text-green-600', action: () => {} }
+                            ].map((item, idx) => (
+                                <button key={idx} onClick={item.action} className="flex flex-col items-center gap-2 group active:scale-95 transition-transform">
+                                    <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center ${item.color}`}>
+                                        <Icon name={item.icon} className="text-3xl" />
+                                    </div>
+                                    <span className="text-xs font-medium text-slate-700">{item.label}</span>
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Recommended */}
+                        <div>
+                             <div className="flex justify-between items-end mb-4 px-1">
+                                <h2 className="text-xl font-bold text-[#111418]">ข้อสอบแนะนำ</h2>
+                                <button onClick={() => onNavigate('category')} className="text-sm font-medium text-primary">ดูทั้งหมด</button>
+                            </div>
+                            {/* Horizontal Scroll on Mobile, Grid on Tablet */}
+                            <div className="flex overflow-x-auto gap-4 pb-4 -mx-4 px-4 hide-scrollbar snap-x md:grid md:grid-cols-2 md:mx-0 md:px-0">
+                                 {[1, 2].map((i) => (
+                                    <div key={i} className="min-w-[280px] snap-center bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 flex-shrink-0">
+                                        <div className="h-32 bg-slate-200 relative flex items-center justify-center">
+                                            <Icon name="history_edu" className="text-slate-300 text-5xl" />
+                                        </div>
+                                        <div className="p-4">
+                                            <h3 className="font-bold text-base mb-1">แนวข้อสอบ ก.พ. ภาค ก 67</h3>
+                                            <p className="text-xs text-slate-500 mb-4">พร้อมเฉลยละเอียด</p>
+                                            <button onClick={onStartExam} className="w-full py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors">
+                                                เริ่มทำข้อสอบ
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </main>
+
+                    <BottomNav active="home" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+
+        // --- Admin Screens ---
+
+        function AdminHomeScreen({ onNavigate }) {
+            return (
+                <div className="pb-24 bg-[#f6f7f8] min-h-screen">
+                    <header className="flex items-center justify-between bg-white p-4 sticky top-0 z-10 shadow-sm border-b border-purple-100">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-admin-primary text-white flex items-center justify-center">
+                                <Icon name="admin_panel_settings" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-xs text-slate-500 font-medium">Administrator</span>
+                                <h2 className="text-lg font-bold leading-tight text-admin-primary">แผงควบคุมหลัก</h2>
+                            </div>
+                        </div>
+                        <button onClick={() => onNavigate('login')} className="p-2 text-slate-400 hover:text-red-500">
+                            <Icon name="logout" />
+                        </button>
+                    </header>
+
+                    <main className="flex flex-col gap-6 px-4 pt-6 max-w-4xl mx-auto w-full">
+                        {/* Stats Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {ADMIN_STATS.map((stat, idx) => (
+                                <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-2">
+                                    <div className={`w-10 h-10 rounded-lg ${stat.color} bg-opacity-10 flex items-center justify-center`}>
+                                        <Icon name={stat.icon} className={`text-${stat.color.split('-')[1]}-600`} />
+                                    </div>
+                                    <div>
+                                        <p className="text-slate-500 text-xs">{stat.title}</p>
+                                        <p className="text-xl font-bold text-[#111418]">{stat.value}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Recent Activity */}
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                            <div className="p-4 border-b border-slate-100 flex justify-between items-center">
+                                <h3 className="font-bold text-[#111418]">กิจกรรมล่าสุด</h3>
+                                <button className="text-xs text-admin-primary">ดูทั้งหมด</button>
+                            </div>
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className="p-4 border-b border-slate-50 last:border-0 flex items-center gap-3 hover:bg-slate-50">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                                        <Icon name="person" className="text-sm" />
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-medium">ผู้ใช้ใหม่ลงทะเบียน</p>
+                                        <p className="text-xs text-slate-500">สมหญิง รักเรียน - 2 นาทีที่แล้ว</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </main>
+                    
+                    <AdminBottomNav active="admin-home" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+
+        function AdminExamScreen({ onNavigate }) {
+            return (
+                 <div className="pb-24 bg-[#f6f7f8] min-h-screen">
+                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
+                        <h2 className="text-lg font-bold text-[#111418]">จัดการข้อสอบ</h2>
+                        <button className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
+                            <Icon name="add" className="text-base" /> เพิ่ม
+                        </button>
+                    </div>
+
+                    <div className="p-4 max-w-4xl mx-auto w-full">
+                        <div className="flex flex-col gap-3">
+                            {[1, 2, 3, 4].map(i => (
+                                <div key={i} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                    <div className="flex gap-3">
+                                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shrink-0">
+                                            <Icon name="description" />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-bold text-[#111418]">แนวข้อสอบชุดที่ {i}</h4>
+                                            <p className="text-xs text-slate-500">กฎหมาย • 50 ข้อ • 60 นาที</p>
+                                            <div className="flex gap-2 mt-1">
+                                                <span className="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full">เผยแพร่แล้ว</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 self-end sm:self-center">
+                                        <button className="p-2 text-slate-400 hover:text-admin-primary bg-slate-50 rounded-lg"><Icon name="edit" /></button>
+                                        <button className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Icon name="delete" /></button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <AdminBottomNav active="admin-exams" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+
+        function AdminUserScreen({ onNavigate }) {
+            return (
+                 <div className="pb-24 bg-[#f6f7f8] min-h-screen">
+                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
+                        <h2 className="text-lg font-bold text-[#111418]">ผู้ใช้งาน</h2>
+                        <button className="text-slate-500"><Icon name="search" /></button>
+                    </div>
+
+                    <div className="p-4 max-w-4xl mx-auto w-full">
+                         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                            {[1, 2, 3, 4, 5].map(i => (
+                                <div key={i} className="p-4 border-b border-slate-50 last:border-0 flex items-center justify-between">
+                                     <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center">
+                                            <Icon name="person" className="text-slate-500" />
+                                        </div>
+                                        <div>
+                                            <p className="font-bold text-sm text-[#111418]">User {i}</p>
+                                            <p className="text-xs text-slate-500">user{i}@example.com</p>
+                                        </div>
+                                     </div>
+                                     <button className="text-slate-400 hover:text-slate-600"><Icon name="more_vert" /></button>
+                                </div>
+                            ))}
+                         </div>
+                    </div>
+                    <AdminBottomNav active="admin-users" onNavigate={onNavigate} />
+                </div>
+            )
+        }
+
+        // --- Other User Screens ---
+        
+        function CategoryScreen({ onNavigate }) {
+            return (
+                <div className="flex flex-col min-h-screen bg-[#f6f7f8]">
+                    <div className="sticky top-0 z-20 flex items-center bg-white/90 backdrop-blur-md p-4 border-b border-slate-100">
+                        <button onClick={() => onNavigate('home')} className="mr-3">
+                            <Icon name="arrow_back" className="text-[#111418]" />
+                        </button>
+                        <h2 className="text-lg font-bold text-[#111418]">เลือกหมวดหมู่ข้อสอบ</h2>
+                    </div>
+                    
+                    <div className="p-4 max-w-4xl mx-auto w-full">
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                            {CATEGORIES.map((cat) => (
+                                <div key={cat.id} onClick={() => onNavigate('exam')} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer relative group">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div className={`w-10 h-10 rounded-full ${cat.color} bg-opacity-20 flex items-center justify-center`}>
+                                            <Icon name={cat.icon} className={`text-${cat.color.split('-')[1]}-600`} />
+                                        </div>
+                                    </div>
+                                    <h4 className="font-bold text-[#111418] mb-1 line-clamp-1">{cat.name}</h4>
+                                    <p className="text-xs text-slate-500 mb-3">{cat.count}</p>
+                                    <div className="w-full bg-slate-100 rounded-full h-1.5">
+                                        <div className={`h-1.5 rounded-full ${cat.color}`} style={{ width: `${cat.progress}%` }}></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <BottomNav active="category" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+        
+        function ExamScreen({ examData, examState, setExamState, onAnswer, onSubmit, onNavigate }) {
+            const currentQ = examData.questions[examState.currentQuestionIndex];
+            const formatTime = (seconds) => {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            };
+
+            return (
+                <div className="flex flex-col h-screen bg-white">
+                    <header className="flex-none flex items-center justify-between p-4 border-b border-slate-100">
+                        <button onClick={() => onNavigate('home')}><Icon name="close" className="text-slate-800" /></button>
+                        <h2 className="font-bold text-lg text-[#111418]">การสอบ</h2>
+                        <button><Icon name="grid_view" className="text-slate-500" /></button>
+                    </header>
+                    
+                    {/* Timer */}
+                    <div className="flex-none px-4 py-3 bg-white shadow-sm z-10">
+                        <div className="flex justify-between items-center mb-2 max-w-2xl mx-auto w-full">
+                            <div className="flex items-center gap-2 text-primary">
+                                <Icon name="timer" className="text-xl" />
+                                <span className="text-lg font-bold tabular-nums">{formatTime(examState.timeRemaining)}</span>
+                            </div>
+                            <span className="text-xs text-slate-500 font-medium">เหลืออีก {Math.floor(examState.timeRemaining/60)} นาที</span>
+                        </div>
+                         <div className="max-w-2xl mx-auto w-full">
+                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                <div className="bg-primary h-full transition-all duration-300" style={{ width: `${((examState.currentQuestionIndex + 1) / examData.questions.length) * 100}%` }}></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <main className="flex-1 overflow-y-auto p-4 pb-20">
+                        <div className="flex flex-col gap-4 max-w-2xl mx-auto w-full">
+                            <div className="flex justify-between items-start">
+                                <span className="inline-flex items-center px-2 py-1 rounded bg-primary/10 text-primary text-xs font-bold">กฎหมาย</span>
+                            </div>
+                            <h2 className="text-xl font-bold text-[#111418] leading-snug">{currentQ.question}</h2>
+                            <div className="w-full h-px bg-slate-100 my-2"></div>
+                            <div className="flex flex-col gap-3">
+                                {currentQ.options.map((opt) => {
+                                    const isSelected = examState.answers[currentQ.id] === opt.id;
+                                    return (
+                                        <label key={opt.id} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${isSelected ? 'border-primary bg-primary/5' : 'border-slate-200 hover:border-primary/50'}`}>
+                                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-slate-300'}`}>
+                                                {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
+                                            </div>
+                                            <input type="radio" name={`q-${currentQ.id}`} className="hidden" onChange={() => onAnswer(currentQ.id, opt.id)} checked={isSelected} />
+                                            <span className={`text-base font-medium ${isSelected ? 'text-primary' : 'text-[#111418]'}`}>{opt.text}</span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </main>
+                    
+                    <footer className="flex-none p-4 border-t border-slate-100 bg-white pb-safe">
+                        <div className="max-w-2xl mx-auto flex gap-4 w-full">
+                            <button onClick={() => setExamState(p => ({ ...p, currentQuestionIndex: Math.max(0, p.currentQuestionIndex - 1) }))} disabled={examState.currentQuestionIndex === 0} className="flex-1 h-12 rounded-xl border border-slate-200 text-[#111418] font-bold disabled:opacity-50 hover:bg-slate-50 flex items-center justify-center gap-2">
+                                <Icon name="chevron_left" /> ก่อนหน้า
+                            </button>
+                            {examState.currentQuestionIndex === examData.questions.length - 1 ? (
+                                <button onClick={onSubmit} className="flex-1 h-12 rounded-xl bg-green-600 text-white font-bold hover:bg-green-700 shadow-lg flex items-center justify-center gap-2">
+                                    ส่งข้อสอบ <Icon name="check_circle" />
+                                </button>
+                            ) : (
+                                <button onClick={() => setExamState(p => ({ ...p, currentQuestionIndex: Math.min(examData.questions.length - 1, p.currentQuestionIndex + 1) }))} className="flex-1 h-12 rounded-xl bg-primary text-white font-bold hover:bg-blue-600 shadow-lg flex items-center justify-center gap-2">
+                                    ถัดไป <Icon name="chevron_right" />
+                                </button>
+                            )}
+                        </div>
+                    </footer>
+                </div>
+            );
+        }
+        
+        function ResultScreen({ examState, onNavigate }) {
+            const isPass = examState.score >= 60;
+            return (
+                <div className="flex flex-col min-h-screen bg-white">
+                     <div className="flex items-center p-4 border-b border-slate-100">
+                        <button onClick={() => onNavigate('home')} className="mr-auto"><Icon name="close" className="text-[#111418]" /></button>
+                        <h2 className="text-lg font-bold flex-1 text-center pr-6">ผลการสอบ</h2>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
+                         <div className="relative w-48 h-48 flex items-center justify-center mb-6">
+                            <div className={`absolute inset-0 rounded-full border-[12px] opacity-20 ${isPass ? 'border-green-500' : 'border-red-500'}`}></div>
+                            <div className={`absolute inset-0 rounded-full border-[12px] border-t-transparent border-r-transparent -rotate-45 ${isPass ? 'border-green-500' : 'border-red-500'}`} style={{ clipPath: 'polygon(0 0, 100% 0, 100% 100%, 0 100%)' }}></div>
+                            <div className="flex flex-col items-center">
+                                <span className="text-slate-500 text-sm font-medium">คะแนนรวม</span>
+                                <span className="text-5xl font-bold text-[#111418]">{examState.score}</span>
+                                <span className={`mt-2 px-3 py-1 rounded-full text-xs font-bold uppercase ${isPass ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{isPass ? 'ผ่านเกณฑ์' : 'ไม่ผ่าน'}</span>
+                            </div>
+                        </div>
+                        <h2 className="text-2xl font-bold text-[#111418] mb-2">{isPass ? 'ยินดีด้วย!' : 'พยายามใหม่นะ'}</h2>
+                         <div className="w-full grid grid-cols-2 gap-3 mb-6 max-w-sm">
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center">
+                                <p className="text-lg font-bold">25:12</p>
+                                <span className="text-xs text-slate-500">เวลาที่ใช้</span>
+                            </div>
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-center">
+                                <p className="text-lg font-bold">{examState.score}%</p>
+                                <span className="text-xs text-slate-500">ความแม่นยำ</span>
+                            </div>
+                        </div>
+                        <button onClick={() => onNavigate('home')} className="w-full max-w-xs h-12 flex items-center justify-center rounded-xl bg-primary text-white font-bold hover:bg-blue-600">เสร็จสิ้น</button>
+                    </div>
+                </div>
+            )
+        }
+
+        function HistoryScreen({ onNavigate }) { return <div className="p-4 text-center">History (Coming Soon) <button onClick={()=>onNavigate('home')} className="text-primary">Back</button></div>; }
+        function ProfileScreen({ onNavigate }) { return <div className="p-4 text-center">Profile (Coming Soon) <button onClick={()=>onNavigate('home')} className="text-primary">Back</button></div>; }
+
+        // --- Navigations ---
+
+        function BottomNav({ active, onNavigate }) {
+            const navItems = [
+                { id: 'home', icon: 'home', label: 'หน้าหลัก' },
+                { id: 'category', icon: 'menu_book', label: 'วิชาสอบ' },
+                { id: 'history', icon: 'bar_chart', label: 'ประวัติ' },
+                { id: 'profile', icon: 'person', label: 'โปรไฟล์' }
+            ];
+
+            return (
+                <div className="fixed bottom-0 w-full bg-white border-t border-slate-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">
+                    {navItems.map((item) => (
+                        <button 
+                            key={item.id}
+                            onClick={() => onNavigate(item.id)}
+                            className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-primary' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <Icon name={item.icon} className={active === item.id ? 'fill-current' : ''} style={{ fontVariationSettings: active === item.id ? "'FILL' 1" : "'FILL' 0" }} />
+                            <span className="text-[10px] font-medium">{item.label}</span>
+                        </button>
+                    ))}
+                </div>
+            );
+        }
+
+        function AdminBottomNav({ active, onNavigate }) {
+             const navItems = [
+                { id: 'admin-home', icon: 'dashboard', label: 'ภาพรวม' },
+                { id: 'admin-exams', icon: 'library_books', label: 'ข้อสอบ' },
+                { id: 'admin-users', icon: 'group', label: 'ผู้ใช้' },
+                { id: 'home', icon: 'visibility', label: 'ดูหน้าเว็บ' } // Switch back to user view
+            ];
+
+            return (
+                <div className="fixed bottom-0 w-full bg-white border-t border-purple-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">
+                    {navItems.map((item) => (
+                        <button 
+                            key={item.id}
+                            onClick={() => onNavigate(item.id)}
+                            className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-admin-primary' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <Icon name={item.icon} className={active === item.id ? 'fill-current' : ''} style={{ fontVariationSettings: active === item.id ? "'FILL' 1" : "'FILL' 0" }} />
+                            <span className="text-[10px] font-medium">{item.label}</span>
+                        </button>
+                    ))}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
