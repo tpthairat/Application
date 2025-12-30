@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TheONE สอบราชการ</title>
+    <title>Civil Service Exam Prep (Video Learning)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -126,6 +126,19 @@
                 '4': 'D', 'ง': 'D', 'D': 'D'
             };
             return map[str] || str;
+        };
+
+        // --- Utility: Extract Youtube ID ---
+        const getYoutubeId = (url) => {
+            if (!url) return null;
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        };
+
+        const getYoutubeThumbnail = (url) => {
+            const id = getYoutubeId(url);
+            return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
         };
 
         // --- Mock Data ---
@@ -288,6 +301,7 @@
                     {currentScreen === 'home' && <HomeScreen user={user} onNavigate={navigate} onStartExam={startExam} />}
                     {currentScreen === 'category' && <CategoryScreen onNavigate={navigate} onStartExam={startExam} />}
                     {currentScreen === 'summary' && <SummaryScreen user={user} onNavigate={navigate} />}
+                    {currentScreen === 'video' && <VideoScreen user={user} onNavigate={navigate} />}
                     {currentScreen === 'history' && <HistoryScreen user={user} onNavigate={navigate} />}
                     {currentScreen === 'profile' && <ProfileScreen user={user} onNavigate={navigate} onLogout={handleLogout} />}
                     
@@ -473,13 +487,11 @@
             const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
             
             useEffect(() => {
-                // Fetch Exams
                 const unsubscribeExams = db.collection('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
                 });
 
-                // Fetch User Stats
                 let unsubscribeStats = () => {};
                 if (user) {
                     unsubscribeStats = db.collection('exam_results').where('userId', '==', user.uid).onSnapshot(snapshot => {
@@ -540,8 +552,8 @@
                         <div className="grid grid-cols-4 gap-4">
                              {[
                                 { label: 'เริ่มสอบ', icon: 'play_circle', color: 'bg-blue-50 text-primary', action: () => onNavigate('category') },
-                                { label: 'ทบทวน', icon: 'menu_book', color: 'bg-orange-50 text-orange-500', action: () => onNavigate('category') },
-                                { label: 'ควิซ', icon: 'quiz', color: 'bg-purple-50 text-purple-500', action: () => {} },
+                                { label: 'แบบทดสอบ', icon: 'menu_book', color: 'bg-orange-50 text-orange-500', action: () => onNavigate('category') },
+                                { label: 'วิดีโอสรุป', icon: 'play_circle', color: 'bg-purple-50 text-purple-500', action: () => onNavigate('video') },
                                 { label: 'สรุปเนื้อหา', icon: 'description', color: 'bg-green-50 text-green-600', action: () => onNavigate('summary') }
                             ].map((item, idx) => (
                                 <button key={idx} onClick={item.action} className="flex flex-col items-center gap-2 group active:scale-95 transition-transform">
@@ -580,17 +592,19 @@
             );
         }
 
-        // --- Reader Modal ---
+        // --- Reader Modal (Shared for Video & Summary) ---
         function ContentReaderModal({ content, onClose }) {
+            const embedUrl = content.type === 'video' && content.url ? content.url.replace("watch?v=", "embed/").replace("youtu.be/", "youtube.com/embed/") : content.url;
+
             return (
-                <div className="fixed inset-0 z-50 bg-black bg-opacity-90 flex flex-col">
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-95 flex flex-col animate-fade-in">
                     <div className="flex justify-between items-center p-4 bg-black text-white">
-                        <h3 className="font-bold truncate pr-4">{content.title}</h3>
+                        <h3 className="font-bold truncate pr-4 text-sm">{content.title}</h3>
                         <button onClick={onClose} className="p-2 bg-white/10 rounded-full hover:bg-white/20">
                             <Icon name="close" />
                         </button>
                     </div>
-                    <div className="flex-1 overflow-auto flex items-center justify-center bg-[#111]">
+                    <div className="flex-1 overflow-hidden flex items-center justify-center bg-[#111]">
                         {content.type === 'image' && (
                             <img src={content.url} alt={content.title} className="max-w-full max-h-full object-contain" />
                         )}
@@ -598,10 +612,10 @@
                             <iframe src={content.url} className="w-full h-full border-0" title={content.title}></iframe>
                         )}
                         {content.type === 'video' && (
-                            <div className="w-full max-w-4xl aspect-video">
+                            <div className="w-full h-full md:max-w-4xl md:h-auto md:aspect-video bg-black flex items-center justify-center">
                                 <iframe 
-                                    src={content.url.replace("watch?v=", "embed/")} 
-                                    className="w-full h-full border-0" 
+                                    src={embedUrl}
+                                    className="w-full h-full md:w-full md:h-full border-0" 
                                     allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
                                     allowFullScreen
                                 ></iframe>
@@ -615,11 +629,11 @@
             );
         }
 
-        // --- Add Content Modal ---
-        function AddContentModal({ onClose, onSave }) {
+        // --- Add Content Modal (Shared) ---
+        function AddContentModal({ onClose, onSave, defaultType = 'pdf' }) {
             const [title, setTitle] = useState('');
             const [url, setUrl] = useState('');
-            const [type, setType] = useState('pdf');
+            const [type, setType] = useState(defaultType);
 
             const handleSubmit = (e) => {
                 e.preventDefault();
@@ -631,7 +645,7 @@
                 <div className="modal-overlay" onClick={onClose}>
                     <div className="bg-white w-full max-w-md mx-4 rounded-xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-lg">เพิ่มเนื้อหาสรุป</h3>
+                            <h3 className="font-bold text-lg">เพิ่มเนื้อหา</h3>
                             <button onClick={onClose}><Icon name="close" /></button>
                         </div>
                         <form onSubmit={handleSubmit} className="space-y-4">
@@ -642,20 +656,107 @@
                             <div>
                                 <label className="block text-sm font-medium mb-1">ประเภท</label>
                                 <select className="w-full border p-2 rounded-lg" value={type} onChange={e => setType(e.target.value)}>
+                                    <option value="video">วิดีโอ YouTube</option>
                                     <option value="pdf">ไฟล์ PDF (ลิงก์)</option>
                                     <option value="image">รูปภาพ (ลิงก์)</option>
-                                    <option value="video">วิดีโอ YouTube</option>
                                     <option value="web">เว็บไซต์</option>
                                 </select>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium mb-1">ลิงก์ (URL)</label>
                                 <input className="w-full border p-2 rounded-lg" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." />
-                                <p className="text-xs text-slate-500 mt-1">วางลิงก์ไฟล์ PDF, รูปภาพ, หรือวิดีโอที่ต้องการแสดง</p>
+                                <p className="text-xs text-slate-500 mt-1">วางลิงก์ไฟล์หรือวิดีโอที่ต้องการแสดง</p>
                             </div>
                             <button type="submit" className="w-full bg-primary text-white py-2 rounded-lg font-bold mt-4">บันทึก</button>
                         </form>
                     </div>
+                </div>
+            );
+        }
+
+        // --- Video Screen ---
+        function VideoScreen({ user, onNavigate }) {
+            const [videos, setVideos] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [viewingContent, setViewingContent] = useState(null);
+
+            useEffect(() => {
+                const unsubscribe = db.collection('videos').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                    setVideos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'video' })));
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handleSaveContent = async (data) => {
+                try {
+                    await db.collection('videos').add(data);
+                    setShowAddModal(false);
+                } catch (error) {
+                    alert('เกิดข้อผิดพลาดในการบันทึก');
+                }
+            };
+
+            const handleDelete = async (id) => {
+                if (confirm('ต้องการลบวิดีโอนี้?')) {
+                    await db.collection('videos').doc(id).delete();
+                }
+            };
+
+            return (
+                <div className="flex flex-col min-h-screen bg-[#f6f7f8] pb-24">
+                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button>
+                            <h2 className="text-lg font-bold text-[#111418]">วิดีโอสรุป</h2>
+                        </div>
+                        {user.role === 'admin' && (
+                            <button onClick={() => setShowAddModal(true)} className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow-sm hover:bg-red-700">
+                                <Icon name="add" className="text-base" /> เพิ่มวิดีโอ
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="p-4 max-w-4xl mx-auto w-full">
+                        {loading ? <LoadingSpinner /> : videos.length === 0 ? (
+                            <div className="text-center py-10 text-slate-500">
+                                <Icon name="video_library" className="text-4xl mb-2" />
+                                <p>ยังไม่มีวิดีโอ</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {videos.map((item) => {
+                                    const thumb = getYoutubeThumbnail(item.url);
+                                    return (
+                                        <div key={item.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow cursor-pointer group" onClick={() => setViewingContent(item)}>
+                                            <div className="aspect-video bg-black relative flex items-center justify-center">
+                                                {thumb ? <img src={thumb} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" /> : <div className="text-white"><Icon name="play_circle" className="text-4xl" /></div>}
+                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                    <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-transform">
+                                                        <Icon name="play_arrow" className="text-2xl" />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div className="p-3 flex justify-between items-start gap-2">
+                                                <h4 className="font-bold text-[#111418] text-sm line-clamp-2">{item.title}</h4>
+                                                {user.role === 'admin' && (
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="text-slate-300 hover:text-red-500">
+                                                        <Icon name="delete" className="text-sm" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {showAddModal && <AddContentModal onClose={() => setShowAddModal(false)} onSave={handleSaveContent} defaultType="video" />}
+                    {viewingContent && <ContentReaderModal content={viewingContent} onClose={() => setViewingContent(null)} />}
+                    
+                    <BottomNav active="video" onNavigate={onNavigate} />
                 </div>
             );
         }
@@ -1339,4 +1440,3 @@
     </script>
 </body>
 </html>
-
