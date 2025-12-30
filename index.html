@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Civil Service Exam Prep (Fixed)</title>
+    <title>Civil Service Exam Prep (User Level)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -108,13 +108,8 @@
 
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
-            // Enable offline persistence
             firebase.firestore().enablePersistence().catch(err => {
-                if (err.code == 'failed-precondition') {
-                    console.log('Persistence failed: Multiple tabs open');
-                } else if (err.code == 'unimplemented') {
-                    console.log('Persistence not supported by browser');
-                }
+                console.log('Persistence disabled or error:', err.code);
             });
         }
         const auth = firebase.auth();
@@ -292,6 +287,7 @@
                     
                     {currentScreen === 'home' && <HomeScreen user={user} onNavigate={navigate} onStartExam={startExam} />}
                     {currentScreen === 'category' && <CategoryScreen onNavigate={navigate} onStartExam={startExam} />}
+                    {currentScreen === 'summary' && <SummaryScreen user={user} onNavigate={navigate} />}
                     {currentScreen === 'history' && <HistoryScreen user={user} onNavigate={navigate} />}
                     {currentScreen === 'profile' && <ProfileScreen user={user} onNavigate={navigate} onLogout={handleLogout} />}
                     
@@ -474,14 +470,41 @@
 
         function HomeScreen({ user, onNavigate, onStartExam }) {
             const [exams, setExams] = useState([]);
+            const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
             
             useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
+                // Fetch Exams
+                const unsubscribeExams = db.collection('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
                 });
-                return () => unsubscribe();
-            }, []);
+
+                // Fetch User Stats
+                let unsubscribeStats = () => {};
+                if (user) {
+                    unsubscribeStats = db.collection('exam_results').where('userId', '==', user.uid).onSnapshot(snapshot => {
+                        if (snapshot.empty) {
+                            setUserStats({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
+                        } else {
+                            let totalScore = 0;
+                            snapshot.forEach(doc => totalScore += doc.data().score);
+                            const avgScore = Math.round(totalScore / snapshot.size);
+                            
+                            let level = 'ปรับปรุง';
+                            if (avgScore >= 90) level = 'ดีเยี่ยม';
+                            else if (avgScore >= 80) level = 'ดีมาก';
+                            else if (avgScore >= 60) level = 'ดี';
+                            
+                            setUserStats({ level, score: avgScore, examsCount: snapshot.size });
+                        }
+                    });
+                }
+
+                return () => {
+                    unsubscribeExams();
+                    unsubscribeStats();
+                };
+            }, [user]);
 
             return (
                 <div className="pb-24 bg-[#f6f7f8] min-h-screen">
@@ -503,14 +526,15 @@
                         <div className="bg-primary rounded-2xl p-5 shadow-lg shadow-blue-500/20 text-white relative overflow-hidden">
                              <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-white/10 blur-2xl"></div>
                              <div className="relative z-10">
-                                <h3 className="text-lg font-bold mb-1">ความคืบหน้า</h3>
+                                <h3 className="text-lg font-bold mb-1">ระดับความสามารถ</h3>
                                 <div className="flex items-end gap-4 mb-2">
-                                    <span className="text-4xl font-bold">65%</span>
-                                    <span className="text-sm text-blue-100 mb-1.5">ของหลักสูตร</span>
+                                    <span className="text-4xl font-bold">{userStats.level}</span>
+                                    <span className="text-sm text-blue-100 mb-1.5">คะแนนเฉลี่ย {userStats.score}%</span>
                                 </div>
                                 <div className="w-full bg-black/20 rounded-full h-2.5 mb-4 overflow-hidden">
-                                    <div className="bg-white h-2.5 rounded-full" style={{ width: '65%' }}></div>
+                                    <div className="bg-white h-2.5 rounded-full" style={{ width: `${userStats.score}%` }}></div>
                                 </div>
+                                <p className="text-xs text-blue-100">จากการทำข้อสอบทั้งหมด {userStats.examsCount} ครั้ง</p>
                              </div>
                         </div>
                         <div className="grid grid-cols-4 gap-4">
@@ -518,7 +542,7 @@
                                 { label: 'เริ่มสอบ', icon: 'play_circle', color: 'bg-blue-50 text-primary', action: () => onNavigate('category') },
                                 { label: 'ทบทวน', icon: 'menu_book', color: 'bg-orange-50 text-orange-500', action: () => onNavigate('category') },
                                 { label: 'ควิซ', icon: 'quiz', color: 'bg-purple-50 text-purple-500', action: () => {} },
-                                { label: 'แผนการ', icon: 'map', color: 'bg-green-50 text-green-600', action: () => {} }
+                                { label: 'สรุปเนื้อหา', icon: 'description', color: 'bg-green-50 text-green-600', action: () => onNavigate('summary') }
                             ].map((item, idx) => (
                                 <button key={idx} onClick={item.action} className="flex flex-col items-center gap-2 group active:scale-95 transition-transform">
                                     <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center ${item.color}`}>
@@ -552,6 +576,174 @@
                         </div>
                     </main>
                     <BottomNav active="home" onNavigate={onNavigate} />
+                </div>
+            );
+        }
+
+        // --- Reader Modal ---
+        function ContentReaderModal({ content, onClose }) {
+            return (
+                <div className="fixed inset-0 z-50 bg-black bg-opacity-90 flex flex-col">
+                    <div className="flex justify-between items-center p-4 bg-black text-white">
+                        <h3 className="font-bold truncate pr-4">{content.title}</h3>
+                        <button onClick={onClose} className="p-2 bg-white/10 rounded-full hover:bg-white/20">
+                            <Icon name="close" />
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-auto flex items-center justify-center bg-[#111]">
+                        {content.type === 'image' && (
+                            <img src={content.url} alt={content.title} className="max-w-full max-h-full object-contain" />
+                        )}
+                        {content.type === 'pdf' && (
+                            <iframe src={content.url} className="w-full h-full border-0" title={content.title}></iframe>
+                        )}
+                        {content.type === 'video' && (
+                            <div className="w-full max-w-4xl aspect-video">
+                                <iframe 
+                                    src={content.url.replace("watch?v=", "embed/")} 
+                                    className="w-full h-full border-0" 
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" 
+                                    allowFullScreen
+                                ></iframe>
+                            </div>
+                        )}
+                        {content.type === 'web' && (
+                            <iframe src={content.url} className="w-full h-full border-0 bg-white" title={content.title}></iframe>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Add Content Modal ---
+        function AddContentModal({ onClose, onSave }) {
+            const [title, setTitle] = useState('');
+            const [url, setUrl] = useState('');
+            const [type, setType] = useState('pdf');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                if (!title || !url) return alert('กรุณากรอกข้อมูลให้ครบ');
+                onSave({ title, url, type, createdAt: new Date() });
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="bg-white w-full max-w-md mx-4 rounded-xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg">เพิ่มเนื้อหาสรุป</h3>
+                            <button onClick={onClose}><Icon name="close" /></button>
+                        </div>
+                        <form onSubmit={handleSubmit} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">ชื่อหัวข้อ</label>
+                                <input className="w-full border p-2 rounded-lg" value={title} onChange={e => setTitle(e.target.value)} placeholder="เช่น สรุปกฎหมาย ก.พ." />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">ประเภท</label>
+                                <select className="w-full border p-2 rounded-lg" value={type} onChange={e => setType(e.target.value)}>
+                                    <option value="pdf">ไฟล์ PDF (ลิงก์)</option>
+                                    <option value="image">รูปภาพ (ลิงก์)</option>
+                                    <option value="video">วิดีโอ YouTube</option>
+                                    <option value="web">เว็บไซต์</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium mb-1">ลิงก์ (URL)</label>
+                                <input className="w-full border p-2 rounded-lg" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." />
+                                <p className="text-xs text-slate-500 mt-1">วางลิงก์ไฟล์ PDF, รูปภาพ, หรือวิดีโอที่ต้องการแสดง</p>
+                            </div>
+                            <button type="submit" className="w-full bg-primary text-white py-2 rounded-lg font-bold mt-4">บันทึก</button>
+                        </form>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Summary Screen ---
+        function SummaryScreen({ user, onNavigate }) {
+            const [summaries, setSummaries] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [viewingContent, setViewingContent] = useState(null);
+
+            useEffect(() => {
+                const unsubscribe = db.collection('summaries').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                    setSummaries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    setLoading(false);
+                });
+                return () => unsubscribe();
+            }, []);
+
+            const handleSaveContent = async (data) => {
+                try {
+                    await db.collection('summaries').add(data);
+                    setShowAddModal(false);
+                } catch (error) {
+                    alert('เกิดข้อผิดพลาดในการบันทึก');
+                }
+            };
+
+            const handleDelete = async (id) => {
+                if (confirm('ต้องการลบเนื้อหานี้?')) {
+                    await db.collection('summaries').doc(id).delete();
+                }
+            };
+
+            return (
+                <div className="flex flex-col min-h-screen bg-[#f6f7f8] pb-24">
+                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button>
+                            <h2 className="text-lg font-bold text-[#111418]">สรุปเนื้อหา</h2>
+                        </div>
+                        {user.role === 'admin' && (
+                            <button onClick={() => setShowAddModal(true)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow-sm hover:bg-green-700">
+                                <Icon name="add" className="text-base" /> เพิ่มเนื้อหา
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="p-4 max-w-4xl mx-auto w-full">
+                        {loading ? <LoadingSpinner /> : summaries.length === 0 ? (
+                            <div className="text-center py-10 text-slate-500">
+                                <Icon name="folder_open" className="text-4xl mb-2" />
+                                <p>ยังไม่มีเอกสารสรุป</p>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-3">
+                                {summaries.map((item) => (
+                                    <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow flex items-center justify-between cursor-pointer" onClick={() => setViewingContent(item)}>
+                                        <div className="flex items-center gap-4 overflow-hidden">
+                                            <div className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 ${item.type === 'pdf' ? 'bg-red-50 text-red-500' : item.type === 'video' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-500'}`}>
+                                                <Icon name={item.type === 'pdf' ? 'picture_as_pdf' : item.type === 'video' ? 'play_circle' : item.type === 'image' ? 'image' : 'language'} />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <h4 className="font-bold text-[#111418] truncate pr-2">{item.title}</h4>
+                                                <p className="text-xs text-slate-500 flex items-center gap-1">
+                                                    {item.createdAt?.toDate ? item.createdAt.toDate().toLocaleDateString('th-TH') : 'N/A'} • 
+                                                    <span className="uppercase">{item.type}</span>
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <Icon name="visibility" className="text-slate-300" />
+                                            {user.role === 'admin' && (
+                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                                                    <Icon name="delete" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    
+                    {showAddModal && <AddContentModal onClose={() => setShowAddModal(false)} onSave={handleSaveContent} />}
+                    {viewingContent && <ContentReaderModal content={viewingContent} onClose={() => setViewingContent(null)} />}
+                    
+                    <BottomNav active="summary" onNavigate={onNavigate} />
                 </div>
             );
         }
