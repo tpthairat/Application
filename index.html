@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TheONE สอบราชการ</title>
+    <title>Civil Service Exam Prep (Video Learning)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1159,31 +1159,50 @@
         }
 
         function AdminExamScreen({ onNavigate }) {
+            const [activeTab, setActiveTab] = useState('exams'); // exams, videos, summaries
             const [viewMode, setViewMode] = useState('list');
+            
+            // Data States
             const [exams, setExams] = useState([]);
+            const [contentItems, setContentItems] = useState([]); // For videos and summaries
+            
+            // Editor States
             const [editorData, setEditorData] = useState({ id: null, title: '', questions: [] });
             const [isUploading, setIsUploading] = useState(false);
             const [editingQuestionIndex, setEditingQuestionIndex] = useState(null);
             const [showQuestionModal, setShowQuestionModal] = useState(false);
+            const [showContentModal, setShowContentModal] = useState(false);
             const [loading, setLoading] = useState(true);
 
             useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                    setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                    setLoading(false);
-                });
-                return () => unsubscribe();
-            }, []);
+                setLoading(true);
+                let unsubscribe;
 
+                if (activeTab === 'exams') {
+                    unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                        setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                        setLoading(false);
+                    });
+                } else {
+                    const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
+                    unsubscribe = db.collection(collectionName).orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                        setContentItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                        setLoading(false);
+                    });
+                }
+                
+                return () => unsubscribe && unsubscribe();
+            }, [activeTab]);
+
+            // --- Handlers for Exams ---
             const handleDeleteExam = async (id) => {
                 if(confirm('คุณต้องการลบชุดข้อสอบนี้ใช่หรือไม่?')) {
                     try { await db.collection('exams').doc(id).delete(); } catch (e) { alert('เกิดข้อผิดพลาดในการลบ'); }
                 }
             };
-
             const handleEditExam = (exam) => { setEditorData({ ...exam }); setViewMode('editor'); };
             const handleCreateExam = () => { setEditorData({ id: null, title: 'ชุดข้อสอบใหม่', questions: [] }); setViewMode('editor'); };
-
+            
             const handleFileUpload = (event) => {
                 const file = event.target.files[0];
                 if (!file) return;
@@ -1252,23 +1271,61 @@
                 }
             };
 
+            // --- Handlers for Content (Videos/Summaries) ---
+            const handleSaveContent = async (data) => {
+                const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
+                try {
+                    await db.collection(collectionName).add(data);
+                    setShowContentModal(false);
+                } catch (error) {
+                    alert('เกิดข้อผิดพลาดในการบันทึก');
+                }
+            };
+
+            const handleDeleteContent = async (id) => {
+                const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
+                if (confirm('ต้องการลบรายการนี้?')) {
+                    await db.collection(collectionName).doc(id).delete();
+                }
+            };
+
+            // --- Render Logic ---
+
             if (viewMode === 'list') {
                 return (
                     <div className="pb-24 bg-[#f6f7f8] min-h-screen">
-                        <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
-                            <h2 className="text-lg font-bold text-[#111418]">จัดการข้อสอบ</h2>
-                            <div className="flex gap-2">
-                                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" disabled={isUploading} />
-                                <label htmlFor="csv-upload" className={`bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 cursor-pointer hover:bg-green-700 transition-colors ${isUploading ? 'opacity-50' : ''}`}>
-                                    {isUploading ? '...' : <Icon name="upload_file" className="text-base" />} CSV
-                                </label>
-                                <button onClick={handleCreateExam} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
-                                    <Icon name="add" className="text-base" /> สร้าง
-                                </button>
+                        <div className="sticky top-0 z-20 bg-white border-b border-slate-100 shadow-sm">
+                            <div className="flex items-center justify-between p-4 pb-2">
+                                <h2 className="text-lg font-bold text-[#111418]">จัดการเนื้อหา</h2>
+                                <div className="flex gap-2">
+                                    {activeTab === 'exams' ? (
+                                        <>
+                                            <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" disabled={isUploading} />
+                                            <label htmlFor="csv-upload" className={`bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 cursor-pointer hover:bg-green-700 transition-colors ${isUploading ? 'opacity-50' : ''}`}>
+                                                {isUploading ? '...' : <Icon name="upload_file" className="text-base" />} CSV
+                                            </label>
+                                            <button onClick={handleCreateExam} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
+                                                <Icon name="add" className="text-base" /> สร้าง
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button onClick={() => setShowContentModal(true)} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
+                                            <Icon name="add" className="text-base" /> เพิ่ม{activeTab === 'videos' ? 'วิดีโอ' : 'สรุป'}
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex px-4 gap-6 overflow-x-auto hide-scrollbar">
+                                <button onClick={() => setActiveTab('exams')} className={`pb-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'exams' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>ข้อสอบ</button>
+                                <button onClick={() => setActiveTab('videos')} className={`pb-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'videos' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>วิดีโอสรุป</button>
+                                <button onClick={() => setActiveTab('summaries')} className={`pb-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'summaries' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>สรุปเนื้อหา</button>
                             </div>
                         </div>
+
                         <div className="p-4 max-w-4xl mx-auto w-full flex flex-col gap-3">
-                            {loading ? <LoadingSpinner /> : exams.length === 0 ? <div className="text-center py-10 text-slate-400">ยังไม่มีข้อสอบ</div> : exams.map(exam => (
+                            {loading && <LoadingSpinner />}
+                            
+                            {!loading && activeTab === 'exams' && exams.map(exam => (
                                 <div key={exam.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                     <div className="flex gap-3">
                                         <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shrink-0"><Icon name="description" /></div>
@@ -1280,12 +1337,40 @@
                                     </div>
                                 </div>
                             ))}
+
+                            {!loading && (activeTab === 'videos' || activeTab === 'summaries') && contentItems.map(item => (
+                                <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex items-center justify-between">
+                                    <div className="flex items-center gap-4 overflow-hidden">
+                                        <div className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 ${activeTab === 'videos' ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-500'}`}>
+                                            <Icon name={activeTab === 'videos' ? 'play_circle' : 'article'} />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <h4 className="font-bold text-[#111418] truncate pr-2">{item.title}</h4>
+                                            <p className="text-xs text-slate-500 truncate max-w-[200px]">{item.url}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => handleDeleteContent(item.id)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Icon name="delete" /></button>
+                                </div>
+                            ))}
+
+                            {!loading && ((activeTab === 'exams' && exams.length === 0) || (activeTab !== 'exams' && contentItems.length === 0)) && (
+                                <div className="text-center py-10 text-slate-400">ไม่มีข้อมูล</div>
+                            )}
                         </div>
+
+                        {showContentModal && (
+                            <AddContentModal 
+                                onClose={() => setShowContentModal(false)} 
+                                onSave={handleSaveContent} 
+                                defaultType={activeTab === 'videos' ? 'video' : 'pdf'} 
+                            />
+                        )}
                         <AdminBottomNav active="admin-exams" onNavigate={onNavigate} />
                     </div>
                 );
             }
 
+            // Editor Mode (For Exams Only)
             return (
                 <div className="bg-[#f6f7f8] min-h-screen flex flex-col">
                     <div className="sticky top-0 z-20 bg-white p-4 border-b border-slate-100 shadow-sm flex items-center justify-between">
@@ -1293,7 +1378,7 @@
                             <button onClick={() => setViewMode('list')}><Icon name="arrow_back" /></button>
                             <h2 className="text-lg font-bold">แก้ไขข้อสอบ</h2>
                         </div>
-                        <button onClick={saveExamToFirestore} className="bg-primary text-white px-4 py-1.5 rounded-lg font-bold shadow-lg shadow-blue-500/30">บันทึกชุดข้อสอบ</button>
+                        <button onClick={saveExamToFirestore} className="bg-primary text-white px-4 py-1.5 rounded-lg font-bold shadow-lg shadow-blue-500/30">บันทึก</button>
                     </div>
                     <div className="p-4 max-w-4xl mx-auto w-full flex-1 overflow-y-auto pb-24">
                         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4">
@@ -1440,4 +1525,3 @@
     </script>
 </body>
 </html>
-
