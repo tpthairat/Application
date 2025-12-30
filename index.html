@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Civil Service Exam Prep (Fixed)</title>
+    <title>Civil Service Exam Prep (User Approval System)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -154,16 +154,26 @@
                         try {
                             const userDoc = await db.collection('users').doc(authUser.uid).get();
                             if (userDoc.exists) {
-                                setUser({ uid: authUser.uid, email: authUser.email, ...userDoc.data() });
-                                if (userDoc.data().role === 'admin') setCurrentScreen('admin-home');
-                                else setCurrentScreen('home');
+                                const userData = userDoc.data();
+                                setUser({ uid: authUser.uid, email: authUser.email, ...userData });
+                                
+                                // Check Status logic
+                                if (userData.status === 'pending') {
+                                    setCurrentScreen('pending-approval');
+                                } else if (userData.role === 'admin') {
+                                    setCurrentScreen('admin-home');
+                                } else {
+                                    setCurrentScreen('home');
+                                }
                             } else {
-                                setUser({ uid: authUser.uid, email: authUser.email, role: 'user', name: 'User' });
-                                setCurrentScreen('home');
+                                // Doc doesn't exist (likely deleted)
+                                await auth.signOut();
+                                alert('ไม่พบข้อมูลผู้ใช้ในระบบ หรือบัญชีถูกลบ');
+                                setCurrentScreen('login');
                             }
                         } catch (error) {
-                            setUser({ uid: authUser.uid, email: authUser.email, role: 'user', name: 'User' });
-                            setCurrentScreen('home');
+                            console.error("Auth Error:", error);
+                            setCurrentScreen('login');
                         }
                     } else {
                         setUser(null);
@@ -245,6 +255,8 @@
                 <div id="app-container">
                     {currentScreen === 'login' && <LoginScreen onNavigate={navigate} />}
                     {currentScreen === 'register' && <RegisterScreen onNavigate={navigate} />}
+                    {currentScreen === 'pending-approval' && <PendingApprovalScreen onLogout={handleLogout} />}
+                    
                     {currentScreen === 'home' && <HomeScreen user={user} onNavigate={navigate} onStartExam={startExam} />}
                     {currentScreen === 'category' && <CategoryScreen onNavigate={navigate} onStartExam={startExam} />}
                     {currentScreen === 'history' && <HistoryScreen user={user} onNavigate={navigate} />}
@@ -354,10 +366,15 @@
                 try {
                     const userCredential = await auth.createUserWithEmailAndPassword(email, password);
                     const user = userCredential.user;
+                    
+                    // Demo Logic: if email contains 'admin', auto-approve and make admin
+                    const isDemoAdmin = email.toLowerCase().startsWith('admin');
+                    
                     await db.collection('users').doc(user.uid).set({
                         name: name,
                         email: email,
-                        role: 'user', 
+                        role: isDemoAdmin ? 'admin' : 'user', 
+                        status: isDemoAdmin ? 'active' : 'pending', // Default pending unless demo admin
                         createdAt: new Date()
                     });
                 } catch (err) {
@@ -395,6 +412,10 @@
                             <label className="text-base font-medium text-[#111418]">รหัสผ่าน</label>
                             <input required type="password" className="w-full h-12 rounded-xl border border-slate-200 px-4 focus:ring-2 focus:ring-primary/50 focus:border-primary outline-none" placeholder="อย่างน้อย 6 ตัวอักษร" value={password} onChange={(e) => setPassword(e.target.value)} />
                         </div>
+                        <div className="bg-blue-50 p-3 rounded-lg text-xs text-blue-700 flex items-start gap-2">
+                            <Icon name="info" className="text-sm mt-0.5" />
+                            <span>สมัครสมาชิกใหม่จะต้องรอการอนุมัติจากผู้ดูแลระบบก่อนเข้าใช้งาน</span>
+                        </div>
                         <button disabled={loading} type="submit" className="w-full h-12 bg-primary text-white rounded-xl font-bold text-base shadow-lg shadow-blue-500/20 hover:bg-blue-600 active:scale-[0.98] transition-all flex justify-center items-center">
                             {loading ? <div className="spinner border-white border-b-transparent h-6 w-6"></div> : 'สมัครสมาชิก'}
                         </button>
@@ -403,371 +424,17 @@
             );
         }
 
-        function HomeScreen({ user, onNavigate, onStartExam }) {
-            const [exams, setExams] = useState([]);
-            
-            useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
-                });
-                return () => unsubscribe();
-            }, []);
-
+        function PendingApprovalScreen({ onLogout }) {
             return (
-                <div className="pb-24 bg-[#f6f7f8] min-h-screen">
-                    <header className="flex items-center justify-between bg-white p-4 sticky top-0 z-10 shadow-sm">
-                        <div className="flex items-center gap-3 cursor-pointer" onClick={() => onNavigate('profile')}>
-                             <div className="w-10 h-10 rounded-full bg-slate-200 border-2 border-primary/20 flex items-center justify-center overflow-hidden">
-                                <Icon name="person" className="text-slate-500" />
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-xs text-slate-500 font-medium">ยินดีต้อนรับกลับ</span>
-                                <h2 className="text-lg font-bold leading-tight">สวัสดี, {user?.name || 'ผู้เยี่ยมชม'}!</h2>
-                            </div>
-                        </div>
-                        <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-50 relative transition-colors">
-                            <Icon name="notifications" className="text-[#111418]" />
-                        </button>
-                    </header>
-                    <main className="flex flex-col gap-6 px-4 pt-6 max-w-2xl mx-auto w-full">
-                        <div className="bg-primary rounded-2xl p-5 shadow-lg shadow-blue-500/20 text-white relative overflow-hidden">
-                             <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-white/10 blur-2xl"></div>
-                             <div className="relative z-10">
-                                <h3 className="text-lg font-bold mb-1">ความคืบหน้า</h3>
-                                <div className="flex items-end gap-4 mb-2">
-                                    <span className="text-4xl font-bold">65%</span>
-                                    <span className="text-sm text-blue-100 mb-1.5">ของหลักสูตร</span>
-                                </div>
-                                <div className="w-full bg-black/20 rounded-full h-2.5 mb-4 overflow-hidden">
-                                    <div className="bg-white h-2.5 rounded-full" style={{ width: '65%' }}></div>
-                                </div>
-                             </div>
-                        </div>
-                        <div className="grid grid-cols-4 gap-4">
-                             {[
-                                { label: 'เริ่มสอบ', icon: 'play_circle', color: 'bg-blue-50 text-primary', action: () => onNavigate('category') },
-                                { label: 'ทบทวน', icon: 'menu_book', color: 'bg-orange-50 text-orange-500', action: () => onNavigate('category') },
-                                { label: 'ควิซ', icon: 'quiz', color: 'bg-purple-50 text-purple-500', action: () => {} },
-                                { label: 'แผนการ', icon: 'map', color: 'bg-green-50 text-green-600', action: () => {} }
-                            ].map((item, idx) => (
-                                <button key={idx} onClick={item.action} className="flex flex-col items-center gap-2 group active:scale-95 transition-transform">
-                                    <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center ${item.color}`}>
-                                        <Icon name={item.icon} className="text-3xl" />
-                                    </div>
-                                    <span className="text-xs font-medium text-slate-700">{item.label}</span>
-                                </button>
-                            ))}
-                        </div>
-                        <div>
-                            <div className="flex justify-between items-end mb-4 px-1">
-                                <h2 className="text-xl font-bold text-[#111418]">ข้อสอบล่าสุด</h2>
-                                <button onClick={() => onNavigate('category')} className="text-sm font-medium text-primary">ดูทั้งหมด</button>
-                            </div>
-                            <div className="flex overflow-x-auto gap-4 pb-4 -mx-4 px-4 hide-scrollbar snap-x md:grid md:grid-cols-2 md:mx-0 md:px-0">
-                                {exams.map((exam, i) => (
-                                    <div key={i} className="min-w-[280px] snap-center bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 flex-shrink-0">
-                                        <div className="h-32 bg-slate-200 relative flex items-center justify-center">
-                                            <Icon name="history_edu" className="text-slate-300 text-5xl" />
-                                        </div>
-                                        <div className="p-4">
-                                            <h3 className="font-bold text-base mb-1 line-clamp-1">{exam.title}</h3>
-                                            <p className="text-xs text-slate-500 mb-4">{exam.questions?.length || 0} ข้อ</p>
-                                            <button onClick={() => onStartExam(exam)} className="w-full py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors">
-                                                เริ่มทำข้อสอบ
-                                            </button>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </main>
-                    <BottomNav active="home" onNavigate={onNavigate} />
-                </div>
-            );
-        }
-
-        // --- Question Editor Component ---
-        function QuestionEditorModal({ question, onClose, onSave }) {
-            const [data, setData] = useState(question ? {...question} : {
-                question: '',
-                options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}],
-                correct: 'A',
-                explanation: ''
-            });
-
-            const handleOptionChange = (idx, val) => {
-                const newOpts = [...data.options];
-                newOpts[idx].text = val;
-                setData({...data, options: newOpts});
-            };
-
-            return (
-                <div className="modal-overlay" onClick={onClose}>
-                    <div className="bg-white w-full max-w-lg mx-4 rounded-xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="font-bold text-lg">{question ? 'แก้ไขข้อสอบ' : 'เพิ่มข้อสอบใหม่'}</h3>
-                            <button onClick={onClose}><Icon name="close" /></button>
-                        </div>
-                        <div className="space-y-3">
-                            <div>
-                                <label className="text-sm font-medium">โจทย์</label>
-                                <textarea className="w-full border p-2 rounded-lg" rows="3" value={data.question} onChange={e => setData({...data, question: e.target.value})}></textarea>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium">ตัวเลือก</label>
-                                {data.options.map((opt, i) => (
-                                    <div key={i} className="flex gap-2 items-center mt-1">
-                                        <span className="w-6 text-center font-bold">{opt.id}</span>
-                                        <input className="flex-1 border p-2 rounded-lg" value={opt.text} onChange={e => handleOptionChange(i, e.target.value)} />
-                                        <input type="radio" name="correct" checked={data.correct === opt.id} onChange={() => setData({...data, correct: opt.id})} className="w-4 h-4" />
-                                    </div>
-                                ))}
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium">คำอธิบายเฉลย</label>
-                                <textarea className="w-full border p-2 rounded-lg" rows="2" value={data.explanation} onChange={e => setData({...data, explanation: e.target.value})}></textarea>
-                            </div>
-                        </div>
-                        <div className="mt-6 flex gap-2">
-                            <button onClick={() => onSave(data)} className="flex-1 bg-primary text-white py-2 rounded-lg font-bold">บันทึก</button>
-                            <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 py-2 rounded-lg font-bold">ยกเลิก</button>
-                        </div>
+                <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
+                    <div className="w-24 h-24 bg-orange-50 rounded-full flex items-center justify-center mb-6 text-orange-500">
+                        <Icon name="hourglass_empty" className="text-5xl" />
                     </div>
-                </div>
-            );
-        }
-
-        function AdminExamScreen({ onNavigate }) {
-            const [viewMode, setViewMode] = useState('list'); // list, editor
-            const [exams, setExams] = useState([]);
-            const [editorData, setEditorData] = useState({ id: null, title: '', questions: [] });
-            const [isUploading, setIsUploading] = useState(false);
-            const [editingQuestionIndex, setEditingQuestionIndex] = useState(null); // null for new, index for edit
-            const [showQuestionModal, setShowQuestionModal] = useState(false);
-
-            useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-                    setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
-                });
-                return () => unsubscribe();
-            }, []);
-
-            const handleDeleteExam = async (id) => {
-                if(confirm('คุณต้องการลบชุดข้อสอบนี้ใช่หรือไม่?')) {
-                    try { await db.collection('exams').doc(id).delete(); } 
-                    catch (e) { alert('เกิดข้อผิดพลาดในการลบ'); }
-                }
-            };
-
-            const handleEditExam = (exam) => {
-                setEditorData({ ...exam });
-                setViewMode('editor');
-            };
-
-            const handleCreateExam = () => {
-                setEditorData({ id: null, title: 'ชุดข้อสอบใหม่', questions: [] });
-                setViewMode('editor');
-            };
-
-            const handleFileUpload = (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-                setIsUploading(true);
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const text = e.target.result;
-                    const lines = text.split('\n');
-                    const newQuestions = [];
-                    for (let line of lines) {
-                        line = line.trim();
-                        if (!line) continue;
-                        const matches = line.match(/^"(.+)","(.+)","(.+)","(.+)","(.+)","(.+)","(.+)"$/);
-                        if (matches && matches.length === 8) { 
-                            newQuestions.push({
-                                question: matches[1],
-                                options: [{ id: 'A', text: matches[2] }, { id: 'B', text: matches[3] }, { id: 'C', text: matches[4] }, { id: 'D', text: matches[5] }],
-                                correct: matches[6], explanation: matches[7], id: Date.now() + Math.random()
-                            });
-                        }
-                    }
-                    setEditorData({
-                        id: null,
-                        title: `ชุดข้อสอบนำเข้า ${new Date().toLocaleString('th-TH')}`,
-                        questions: newQuestions
-                    });
-                    setViewMode('editor');
-                    setIsUploading(false);
-                    event.target.value = null; // Reset file input
-                };
-                reader.readAsText(file);
-            };
-
-            const saveExamToFirestore = async () => {
-                try {
-                    const dataToSave = {
-                        title: editorData.title,
-                        questions: editorData.questions,
-                        timeLimit: editorData.questions.length * 60,
-                        subject: "ทั่วไป",
-                        createdAt: editorData.createdAt || new Date()
-                    };
-
-                    if (editorData.id) {
-                        await db.collection('exams').doc(editorData.id).update(dataToSave);
-                    } else {
-                        await db.collection('exams').add(dataToSave);
-                    }
-                    alert('บันทึกสำเร็จ');
-                    setViewMode('list');
-                } catch (e) {
-                    console.error(e);
-                    alert('บันทึกไม่สำเร็จ');
-                }
-            };
-
-            const handleSaveQuestion = (qData) => {
-                const newQuestions = [...editorData.questions];
-                if (editingQuestionIndex !== null) {
-                    newQuestions[editingQuestionIndex] = qData;
-                } else {
-                    newQuestions.push({ ...qData, id: Date.now() + Math.random() });
-                }
-                setEditorData({ ...editorData, questions: newQuestions });
-                setShowQuestionModal(false);
-            };
-
-            const handleDeleteQuestion = (idx) => {
-                if (confirm('ลบข้อนี้?')) {
-                    const newQuestions = editorData.questions.filter((_, i) => i !== idx);
-                    setEditorData({ ...editorData, questions: newQuestions });
-                }
-            };
-
-            // --- Render: List Mode ---
-            if (viewMode === 'list') {
-                return (
-                    <div className="pb-24 bg-[#f6f7f8] min-h-screen">
-                        <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
-                            <h2 className="text-lg font-bold text-[#111418]">จัดการข้อสอบ</h2>
-                            <div className="flex gap-2">
-                                <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" disabled={isUploading} />
-                                <label htmlFor="csv-upload" className={`bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 cursor-pointer hover:bg-green-700 transition-colors ${isUploading ? 'opacity-50' : ''}`}>
-                                    {isUploading ? '...' : <Icon name="upload_file" className="text-base" />} CSV
-                                </label>
-                                <button onClick={handleCreateExam} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1">
-                                    <Icon name="add" className="text-base" /> สร้าง
-                                </button>
-                            </div>
-                        </div>
-                        <div className="p-4 max-w-4xl mx-auto w-full flex flex-col gap-3">
-                            {exams.map(exam => (
-                                <div key={exam.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                    <div className="flex gap-3">
-                                        <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shrink-0"><Icon name="description" /></div>
-                                        <div>
-                                            <h4 className="font-bold text-[#111418]">{exam.title}</h4>
-                                            <p className="text-xs text-slate-500">{exam.questions?.length || 0} ข้อ • {exam.createdAt?.toDate ? exam.createdAt.toDate().toLocaleDateString('th-TH') : 'N/A'}</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2 self-end sm:self-center">
-                                        <button onClick={() => handleEditExam(exam)} className="p-2 text-slate-400 hover:text-admin-primary bg-slate-50 rounded-lg"><Icon name="edit" /></button>
-                                        <button onClick={() => handleDeleteExam(exam.id)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Icon name="delete" /></button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                        <AdminBottomNav active="admin-exams" onNavigate={onNavigate} />
-                    </div>
-                );
-            }
-
-            // --- Render: Editor Mode ---
-            return (
-                <div className="bg-[#f6f7f8] min-h-screen flex flex-col">
-                    <div className="sticky top-0 z-20 bg-white p-4 border-b border-slate-100 shadow-sm flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => setViewMode('list')}><Icon name="arrow_back" /></button>
-                            <h2 className="text-lg font-bold">แก้ไขข้อสอบ</h2>
-                        </div>
-                        <button onClick={saveExamToFirestore} className="bg-primary text-white px-4 py-1.5 rounded-lg font-bold shadow-lg shadow-blue-500/30">บันทึกชุดข้อสอบ</button>
-                    </div>
-
-                    <div className="p-4 max-w-4xl mx-auto w-full flex-1 overflow-y-auto pb-24">
-                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4">
-                            <label className="text-sm font-bold text-slate-500">ชื่อชุดข้อสอบ</label>
-                            <input 
-                                className="w-full text-lg font-bold border-b border-slate-200 py-2 focus:border-primary outline-none bg-transparent"
-                                value={editorData.title}
-                                onChange={e => setEditorData({...editorData, title: e.target.value})}
-                                placeholder="ตั้งชื่อชุดข้อสอบ..."
-                            />
-                        </div>
-
-                        <div className="flex items-center justify-between mb-2 px-1">
-                            <h3 className="font-bold text-slate-700">รายการข้อสอบ ({editorData.questions.length})</h3>
-                            <button onClick={() => { setEditingQuestionIndex(null); setShowQuestionModal(true); }} className="text-primary text-sm font-bold flex items-center gap-1">
-                                <Icon name="add_circle" /> เพิ่มข้อ
-                            </button>
-                        </div>
-
-                        <div className="space-y-3">
-                            {editorData.questions.map((q, idx) => (
-                                <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
-                                    <div className="flex justify-between items-start gap-4">
-                                        <div className="flex-1">
-                                            <div className="flex gap-2">
-                                                <span className="font-bold text-slate-400">{idx + 1}.</span>
-                                                <p className="font-medium text-[#111418]">{q.question}</p>
-                                            </div>
-                                            <p className="text-xs text-green-600 mt-1 ml-6">เฉลย: {q.correct}</p>
-                                        </div>
-                                        <div className="flex gap-1 shrink-0">
-                                            <button onClick={() => { setEditingQuestionIndex(idx); setShowQuestionModal(true); }} className="p-1.5 text-slate-400 hover:text-admin-primary bg-slate-50 rounded"><Icon name="edit" className="text-sm" /></button>
-                                            <button onClick={() => handleDeleteQuestion(idx)} className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded"><Icon name="delete" className="text-sm" /></button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {showQuestionModal && (
-                        <QuestionEditorModal 
-                            question={editingQuestionIndex !== null ? editorData.questions[editingQuestionIndex] : null}
-                            onClose={() => setShowQuestionModal(false)}
-                            onSave={handleSaveQuestion}
-                        />
-                    )}
-                </div>
-            );
-        }
-
-        function AdminHomeScreen({ user, onNavigate, onLogout }) {
-             const ADMIN_STATS = [
-                { title: "ผู้ใช้งานทั้งหมด", value: "...", icon: "group", color: "bg-blue-500" },
-                { title: "ข้อสอบในระบบ", value: "...", icon: "library_books", color: "bg-green-500" },
-            ];
-            return (
-                <div className="pb-24 bg-[#f6f7f8] min-h-screen">
-                    <header className="flex items-center justify-between bg-white p-4 sticky top-0 z-10 shadow-sm border-b border-purple-100">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-admin-primary text-white flex items-center justify-center"><Icon name="admin_panel_settings" /></div>
-                            <div className="flex flex-col"><span className="text-xs text-slate-500 font-medium">Administrator</span><h2 className="text-lg font-bold leading-tight text-admin-primary">{user?.name}</h2></div>
-                        </div>
-                        <button onClick={onLogout} className="p-2 text-slate-400 hover:text-red-500"><Icon name="logout" /></button>
-                    </header>
-                    <main className="flex flex-col gap-6 px-4 pt-6 max-w-4xl mx-auto w-full">
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {ADMIN_STATS.map((stat, idx) => (
-                                <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-2">
-                                    <div className={`w-10 h-10 rounded-lg ${stat.color} bg-opacity-10 flex items-center justify-center`}><Icon name={stat.icon} className={`text-${stat.color.split('-')[1]}-600`} /></div>
-                                    <div><p className="text-slate-500 text-xs">{stat.title}</p><p className="text-xl font-bold text-[#111418]">{stat.value}</p></div>
-                                </div>
-                            ))}
-                        </div>
-                    </main>
-                    <AdminBottomNav active="admin-home" onNavigate={onNavigate} />
+                    <h1 className="text-2xl font-bold text-[#111418] mb-2">รอการอนุมัติ</h1>
+                    <p className="text-slate-500 mb-8 max-w-xs">บัญชีของคุณถูกสร้างเรียบร้อยแล้ว<br/>กรุณารอผู้ดูแลระบบตรวจสอบและอนุมัติสิทธิ์การใช้งาน</p>
+                    <button onClick={onLogout} className="w-full max-w-xs h-12 rounded-xl border border-slate-200 text-[#111418] font-bold hover:bg-slate-50 transition-colors">
+                        กลับสู่หน้าล็อกอิน
+                    </button>
                 </div>
             );
         }
@@ -775,6 +442,8 @@
         function AdminUserScreen({ onNavigate, currentUser }) {
             const [users, setUsers] = useState([]);
             const [loading, setLoading] = useState(true);
+            const [tab, setTab] = useState('pending'); // 'pending' or 'all'
+
             useEffect(() => {
                 const unsubscribe = db.collection('users').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
                     setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -782,25 +451,79 @@
                 });
                 return () => unsubscribe();
             }, []);
-            const toggleRole = async (userId, currentRole) => {
-                try { await db.collection('users').doc(userId).update({ role: currentRole === 'admin' ? 'user' : 'admin' }); } 
-                catch (error) { alert("เกิดข้อผิดพลาด"); }
+
+            const approveUser = async (userId) => {
+                try {
+                    await db.collection('users').doc(userId).update({ status: 'active' });
+                } catch (error) { alert("เกิดข้อผิดพลาดในการอนุมัติ"); }
             };
+
+            const deleteUser = async (userId) => {
+                if (confirm('คุณต้องการลบผู้ใช้นี้ออกจากระบบใช่หรือไม่?')) {
+                    try {
+                        await db.collection('users').doc(userId).delete();
+                    } catch (error) { alert("เกิดข้อผิดพลาดในการลบ"); }
+                }
+            };
+
+            const filteredUsers = tab === 'pending' 
+                ? users.filter(u => u.status === 'pending')
+                : users;
+
             return (
                 <div className="pb-24 bg-[#f6f7f8] min-h-screen">
-                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm">
-                        <h2 className="text-lg font-bold text-[#111418]">จัดการผู้ใช้</h2><div className="w-8"></div>
+                    <div className="sticky top-0 z-20 flex flex-col bg-white border-b border-slate-100 shadow-sm">
+                        <div className="flex items-center justify-between p-4">
+                            <h2 className="text-lg font-bold text-[#111418]">จัดการผู้ใช้</h2>
+                            <div className="w-8"></div>
+                        </div>
+                        <div className="flex px-4 pb-2 gap-4">
+                            <button onClick={() => setTab('pending')} className={`pb-2 text-sm font-bold border-b-2 transition-colors ${tab === 'pending' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>
+                                รออนุมัติ ({users.filter(u => u.status === 'pending').length})
+                            </button>
+                            <button onClick={() => setTab('all')} className={`pb-2 text-sm font-bold border-b-2 transition-colors ${tab === 'all' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>
+                                ทั้งหมด
+                            </button>
+                        </div>
                     </div>
+
                     <div className="p-4 max-w-4xl mx-auto w-full">
                         {loading ? <LoadingSpinner /> : (
                             <div className="flex flex-col gap-3">
-                                {users.map(user => (
+                                {filteredUsers.length === 0 && (
+                                    <div className="text-center py-10 text-slate-400">
+                                        <p>ไม่มีรายชื่อผู้ใช้</p>
+                                    </div>
+                                )}
+                                {filteredUsers.map(user => (
                                     <div key={user.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                         <div className="flex gap-3 items-center">
-                                            <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 shrink-0"><span className="text-lg font-bold">{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</span></div>
-                                            <div><div className="flex items-center gap-2"><h4 className="font-bold text-[#111418]">{user.name || 'User'}</h4>{user.role === 'admin' && <span className="bg-admin-primary/10 text-admin-primary text-[10px] px-2 py-0.5 rounded-full font-bold">Admin</span>}</div><p className="text-xs text-slate-500">{user.email}</p></div>
+                                            <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${user.status === 'pending' ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'}`}>
+                                                <span className="text-lg font-bold">{user.name ? user.name.charAt(0).toUpperCase() : 'U'}</span>
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <h4 className="font-bold text-[#111418]">{user.name || 'User'}</h4>
+                                                    {user.status === 'pending' && <span className="bg-orange-100 text-orange-700 text-[10px] px-2 py-0.5 rounded-full font-bold">รออนุมัติ</span>}
+                                                    {user.role === 'admin' && <span className="bg-purple-100 text-purple-700 text-[10px] px-2 py-0.5 rounded-full font-bold">Admin</span>}
+                                                </div>
+                                                <p className="text-xs text-slate-500">{user.email}</p>
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-2 self-end sm:self-center"><button onClick={() => toggleRole(user.id, user.role)} disabled={currentUser && currentUser.uid === user.id} className={`px-3 py-1.5 rounded-lg text-sm font-bold transition-colors ${currentUser && currentUser.uid === user.id ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : user.role === 'admin' ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}>{user.role === 'admin' ? 'ถอนสิทธิ์ Admin' : 'ตั้งเป็น Admin'}</button></div>
+                                        <div className="flex items-center gap-2 self-end sm:self-center">
+                                            {user.status === 'pending' && (
+                                                <button onClick={() => approveUser(user.id)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm hover:bg-green-700 flex items-center gap-1">
+                                                    <Icon name="check" className="text-base" /> อนุมัติ
+                                                </button>
+                                            )}
+                                            <button 
+                                                onClick={() => deleteUser(user.id)} 
+                                                disabled={currentUser && currentUser.uid === user.id}
+                                                className={`p-2 rounded-lg text-slate-400 transition-colors ${currentUser && currentUser.uid === user.id ? 'opacity-50 cursor-not-allowed' : 'hover:bg-red-50 hover:text-red-500'}`}
+                                            >
+                                                <Icon name="delete" />
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -811,161 +534,29 @@
             );
         }
 
-        function CategoryScreen({ onNavigate, onStartExam }) {
+        // ... (Keep existing HomeScreen, CategoryScreen, HistoryScreen, ProfileScreen, QuestionEditorModal, AdminExamScreen, AdminHomeScreen, ExamScreen, ResultScreen, BottomNav, AdminBottomNav unchanged) ...
+        
+        function HomeScreen({ user, onNavigate, onStartExam }) { /* ...same... */
             const [exams, setExams] = useState([]);
             useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-                    setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
                 });
                 return () => unsubscribe();
             }, []);
-            return (
-                <div className="flex flex-col min-h-screen bg-[#f6f7f8]">
-                    <div className="sticky top-0 z-20 flex items-center bg-white/90 backdrop-blur-md p-4 border-b border-slate-100"><button onClick={() => onNavigate('home')} className="mr-3"><Icon name="arrow_back" className="text-[#111418]" /></button><h2 className="text-lg font-bold text-[#111418]">เลือกข้อสอบ</h2></div>
-                    <div className="p-4 max-w-4xl mx-auto w-full">
-                        {exams.length === 0 ? <div className="text-center py-10 text-slate-500"><Icon name="sentiment_dissatisfied" className="text-4xl mb-2" /><p>ยังไม่มีข้อสอบในระบบ</p></div> : (
-                            <div className="flex flex-col gap-3">{exams.map((exam) => (
-                                <div key={exam.id} onClick={() => onStartExam(exam)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-primary"><Icon name="description" /></div><div><h4 className="font-bold text-[#111418] mb-1">{exam.title}</h4><p className="text-xs text-slate-500">{exam.questions?.length || 0} ข้อ • {Math.floor((exam.timeLimit || 1800) / 60)} นาที</p></div></div><Icon name="chevron_right" className="text-slate-400" /></div>
-                            ))}</div>
-                        )}
-                    </div>
-                    <BottomNav active="category" onNavigate={onNavigate} />
-                </div>
-            );
+            return ( <div className="pb-24 bg-[#f6f7f8] min-h-screen"> <header className="flex items-center justify-between bg-white p-4 sticky top-0 z-10 shadow-sm"> <div className="flex items-center gap-3 cursor-pointer" onClick={() => onNavigate('profile')}> <div className="w-10 h-10 rounded-full bg-slate-200 border-2 border-primary/20 flex items-center justify-center overflow-hidden"> <Icon name="person" className="text-slate-500" /> </div> <div className="flex flex-col"> <span className="text-xs text-slate-500 font-medium">ยินดีต้อนรับกลับ</span> <h2 className="text-lg font-bold leading-tight">สวัสดี, {user?.name || 'ผู้เยี่ยมชม'}!</h2> </div> </div> <button className="w-10 h-10 flex items-center justify-center rounded-full hover:bg-slate-50 relative transition-colors"> <Icon name="notifications" className="text-[#111418]" /> </button> </header> <main className="flex flex-col gap-6 px-4 pt-6 max-w-2xl mx-auto w-full"> <div className="bg-primary rounded-2xl p-5 shadow-lg shadow-blue-500/20 text-white relative overflow-hidden"> <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-white/10 blur-2xl"></div> <div className="relative z-10"> <h3 className="text-lg font-bold mb-1">ความคืบหน้า</h3> <div className="flex items-end gap-4 mb-2"> <span className="text-4xl font-bold">65%</span> <span className="text-sm text-blue-100 mb-1.5">ของหลักสูตร</span> </div> <div className="w-full bg-black/20 rounded-full h-2.5 mb-4 overflow-hidden"> <div className="bg-white h-2.5 rounded-full" style={{ width: '65%' }}></div> </div> </div> </div> <div className="grid grid-cols-4 gap-4"> {[ { label: 'เริ่มสอบ', icon: 'play_circle', color: 'bg-blue-50 text-primary', action: () => onNavigate('category') }, { label: 'ทบทวน', icon: 'menu_book', color: 'bg-orange-50 text-orange-500', action: () => onNavigate('category') }, { label: 'ควิซ', icon: 'quiz', color: 'bg-purple-50 text-purple-500', action: () => {} }, { label: 'แผนการ', icon: 'map', color: 'bg-green-50 text-green-600', action: () => {} } ].map((item, idx) => ( <button key={idx} onClick={item.action} className="flex flex-col items-center gap-2 group active:scale-95 transition-transform"> <div className={`w-14 h-14 md:w-16 md:h-16 rounded-2xl flex items-center justify-center ${item.color}`}> <Icon name={item.icon} className="text-3xl" /> </div> <span className="text-xs font-medium text-slate-700">{item.label}</span> </button> ))} </div> <div> <div className="flex justify-between items-end mb-4 px-1"> <h2 className="text-xl font-bold text-[#111418]">ข้อสอบล่าสุด</h2> <button onClick={() => onNavigate('category')} className="text-sm font-medium text-primary">ดูทั้งหมด</button> </div> <div className="flex overflow-x-auto gap-4 pb-4 -mx-4 px-4 hide-scrollbar snap-x md:grid md:grid-cols-2 md:mx-0 md:px-0"> {exams.map((exam, i) => ( <div key={i} className="min-w-[280px] snap-center bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 flex-shrink-0"> <div className="h-32 bg-slate-200 relative flex items-center justify-center"> <Icon name="history_edu" className="text-slate-300 text-5xl" /> </div> <div className="p-4"> <h3 className="font-bold text-base mb-1 line-clamp-1">{exam.title}</h3> <p className="text-xs text-slate-500 mb-4">{exam.questions?.length || 0} ข้อ</p> <button onClick={() => onStartExam(exam)} className="w-full py-2 bg-primary hover:bg-blue-600 text-white rounded-lg text-sm font-medium transition-colors"> เริ่มทำข้อสอบ </button> </div> </div> ))} </div> </div> </main> <BottomNav active="home" onNavigate={onNavigate} /> </div> );
         }
-
-        function HistoryScreen({ user, onNavigate }) {
-            const [history, setHistory] = useState([]);
-            const [loading, setLoading] = useState(true);
-            useEffect(() => {
-                if (!user) return;
-                const fetch = async () => {
-                    try {
-                        const snap = await db.collection('exam_results').where('userId', '==', user.uid).orderBy('date', 'desc').get();
-                        setHistory(snap.docs.map(doc => ({ id: doc.id, ...doc.data(), dateString: doc.data().date?.toDate ? doc.data().date.toDate().toLocaleDateString('th-TH') : 'N/A' })));
-                    } catch(e){} finally { setLoading(false); }
-                };
-                fetch();
-            }, [user]);
-            return (
-                <div className="min-h-screen bg-[#f6f7f8] pb-24">
-                    <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm"><button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button><h1 className="text-lg font-bold">ประวัติการสอบ</h1><div className="w-8"></div></div>
-                    {loading ? <LoadingSpinner /> : <div className="px-4 py-4 flex flex-col gap-3">{history.map(item => (<div key={item.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col gap-3"><div className="flex justify-between items-start"><div className="flex gap-3"><div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.status === 'pass' ? 'bg-blue-50 text-primary' : 'bg-red-50 text-red-500'}`}><Icon name="description" /></div><div><h4 className="font-bold text-[#111418] text-sm">{item.examTitle}</h4><p className="text-xs text-slate-500">วันที่ {item.dateString}</p></div></div><span className={`px-2 py-1 rounded-lg text-xs font-bold ${item.status === 'pass' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{item.score}%</span></div></div>))}</div>}
-                    <BottomNav active="history" onNavigate={onNavigate} />
-                </div>
-            );
-        }
-
-        function ProfileScreen({ user, onNavigate, onLogout }) {
-            return (
-                <div className="min-h-screen bg-[#f6f7f8] pb-24">
-                    <div className="bg-white pb-4"><div className="flex items-center justify-between p-4"><button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button><h2 className="text-lg font-bold">โปรไฟล์</h2><div className="w-6"></div></div><div className="flex flex-col items-center gap-3"><div className="w-24 h-24 rounded-full bg-slate-200 relative border-4 border-white shadow-md flex items-center justify-center"><span className="text-4xl text-slate-400 font-bold">{user?.name ? user.name.charAt(0) : 'U'}</span></div><div className="text-center"><h3 className="text-xl font-bold text-[#111418]">{user?.name || 'User'}</h3><p className="text-sm text-slate-500">{user?.email}</p></div></div></div>
-                    <div className="mt-4 px-4"><button onClick={onLogout} className="w-full py-3 text-red-600 font-bold bg-white rounded-xl shadow-sm border border-slate-200 hover:bg-red-50 transition-colors">ออกจากระบบ</button></div>
-                    <BottomNav active="profile" onNavigate={onNavigate} />
-                </div>
-            );
-        }
-
-        function ExamScreen({ examData, examState, setExamState, onAnswer, onSubmit, onNavigate }) {
-            const currentQ = examData.questions[examState.currentQuestionIndex];
-            const formatTime = (seconds) => {
-                const mins = Math.floor(seconds / 60);
-                const secs = seconds % 60;
-                return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-            };
-            return (
-                <div className="flex flex-col h-screen bg-white">
-                    <header className="flex-none flex items-center justify-between p-4 border-b border-slate-100">
-                        <button onClick={() => onNavigate('home')}><Icon name="close" className="text-slate-800" /></button>
-                        <h2 className="font-bold text-lg text-[#111418] truncate pr-2 max-w-[200px]">{examData.title}</h2>
-                        <div className="w-6"></div>
-                    </header>
-                    <div className="flex-none px-4 py-3 bg-white shadow-sm z-10">
-                        <div className="flex justify-between items-center mb-2 max-w-2xl mx-auto w-full">
-                            <div className="flex items-center gap-2 text-primary">
-                                <Icon name="timer" className="text-xl" />
-                                <span className="text-lg font-bold tabular-nums">{formatTime(examState.timeRemaining)}</span>
-                            </div>
-                            <span className="text-xs text-slate-500 font-medium">ข้อที่ {examState.currentQuestionIndex + 1}/{examData.questions.length}</span>
-                        </div>
-                         <div className="max-w-2xl mx-auto w-full">
-                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                <div className="bg-primary h-full transition-all duration-300" style={{ width: `${((examState.currentQuestionIndex + 1) / examData.questions.length) * 100}%` }}></div>
-                            </div>
-                        </div>
-                    </div>
-                    <main className="flex-1 overflow-y-auto p-4 pb-20">
-                        <div className="flex flex-col gap-4 max-w-2xl mx-auto w-full">
-                            <h2 className="text-xl font-bold text-[#111418] leading-snug">{currentQ.question}</h2>
-                            <div className="flex flex-col gap-3">
-                                {currentQ.options.map((opt) => {
-                                    const isSelected = examState.answers[currentQ.id] === opt.id;
-                                    return (
-                                        <label key={opt.id} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${isSelected ? 'border-primary bg-primary/5' : 'border-slate-200 hover:border-primary/50'}`}>
-                                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-slate-300'}`}>
-                                                {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
-                                            </div>
-                                            <input type="radio" name={`q-${currentQ.id}`} className="hidden" onChange={() => onAnswer(currentQ.id, opt.id)} checked={isSelected} />
-                                            <span className={`text-base font-medium ${isSelected ? 'text-primary' : 'text-[#111418]'}`}>{opt.text}</span>
-                                        </label>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    </main>
-                    <footer className="flex-none p-4 border-t border-slate-100 bg-white pb-safe">
-                        <div className="max-w-2xl mx-auto flex gap-4 w-full">
-                             <button onClick={() => setExamState(p => ({ ...p, currentQuestionIndex: Math.max(0, p.currentQuestionIndex - 1) }))} disabled={examState.currentQuestionIndex === 0} className="flex-1 h-12 rounded-xl border border-slate-200 text-[#111418] font-bold disabled:opacity-50 hover:bg-slate-50 flex items-center justify-center gap-2">
-                                <Icon name="chevron_left" /> ก่อนหน้า
-                            </button>
-                             {examState.currentQuestionIndex === examData.questions.length - 1 ? (
-                                <button onClick={onSubmit} className="flex-1 h-12 rounded-xl bg-green-600 text-white font-bold hover:bg-green-700 shadow-lg flex items-center justify-center gap-2">
-                                    ส่งข้อสอบ <Icon name="check_circle" />
-                                </button>
-                            ) : (
-                                <button onClick={() => setExamState(p => ({ ...p, currentQuestionIndex: Math.min(examData.questions.length - 1, p.currentQuestionIndex + 1) }))} className="flex-1 h-12 rounded-xl bg-primary text-white font-bold hover:bg-blue-600 shadow-lg flex items-center justify-center gap-2">
-                                    ถัดไป <Icon name="chevron_right" />
-                                </button>
-                            )}
-                        </div>
-                    </footer>
-                </div>
-            );
-        }
-
-        function ResultScreen({ examState, totalQuestions, onNavigate }) {
-            const isPass = examState.score >= 60;
-            return (
-                <div className="flex flex-col min-h-screen bg-white">
-                     <div className="flex items-center p-4 border-b border-slate-100">
-                        <button onClick={() => onNavigate('home')} className="mr-auto"><Icon name="close" className="text-[#111418]" /></button>
-                        <h2 className="text-lg font-bold flex-1 text-center pr-6">ผลการสอบ</h2>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center">
-                         <div className="relative w-48 h-48 flex items-center justify-center mb-6">
-                            <div className="flex flex-col items-center">
-                                <span className="text-slate-500 text-sm font-medium">คะแนนรวม</span>
-                                <span className="text-5xl font-bold text-[#111418]">{examState.score}</span>
-                                <span className="text-sm text-slate-400">/ 100</span>
-                            </div>
-                        </div>
-                        <h2 className="text-2xl font-bold text-[#111418] mb-2">{isPass ? 'ยินดีด้วย!' : 'พยายามใหม่นะ'}</h2>
-                        <p className="text-slate-500 mb-8">{isPass ? 'คุณผ่านเกณฑ์การทดสอบ' : 'คุณยังไม่ผ่านเกณฑ์ 60%'}</p>
-                        <button onClick={() => onNavigate('home')} className="w-full max-w-xs h-12 flex items-center justify-center rounded-xl bg-primary text-white font-bold hover:bg-blue-600">กลับหน้าหลัก</button>
-                    </div>
-                </div>
-            )
-        }
-
-        function BottomNav({ active, onNavigate }) {
-            const navItems = [{ id: 'home', icon: 'home', label: 'หน้าหลัก' }, { id: 'category', icon: 'menu_book', label: 'วิชาสอบ' }, { id: 'history', icon: 'bar_chart', label: 'ประวัติ' }, { id: 'profile', icon: 'person', label: 'โปรไฟล์' }];
-            return <div className="fixed bottom-0 w-full bg-white border-t border-slate-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">{navItems.map((item) => (<button key={item.id} onClick={() => onNavigate(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-primary' : 'text-slate-400'}`}><Icon name={item.icon} className={active === item.id ? 'fill-current' : ''} style={{ fontVariationSettings: active === item.id ? "'FILL' 1" : "'FILL' 0" }} /><span className="text-[10px] font-medium">{item.label}</span></button>))}</div>;
-        }
-
-        function AdminBottomNav({ active, onNavigate }) {
-            const navItems = [{ id: 'admin-home', icon: 'dashboard', label: 'ภาพรวม' }, { id: 'admin-exams', icon: 'library_books', label: 'ข้อสอบ' }, { id: 'admin-users', icon: 'group', label: 'ผู้ใช้' }, { id: 'home', icon: 'visibility', label: 'ดูหน้าเว็บ' }];
-            return <div className="fixed bottom-0 w-full bg-white border-t border-purple-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">{navItems.map((item) => (<button key={item.id} onClick={() => onNavigate(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-admin-primary' : 'text-slate-400'}`}><Icon name={item.icon} /><span className="text-[10px] font-medium">{item.label}</span></button>))}</div>;
-        }
+        function CategoryScreen({ onNavigate, onStartExam }) { /* ...same... */ const [exams, setExams] = useState([]); useEffect(() => { const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').onSnapshot(snapshot => { setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); return () => unsubscribe(); }, []); return ( <div className="flex flex-col min-h-screen bg-[#f6f7f8]"> <div className="sticky top-0 z-20 flex items-center bg-white/90 backdrop-blur-md p-4 border-b border-slate-100"><button onClick={() => onNavigate('home')} className="mr-3"><Icon name="arrow_back" className="text-[#111418]" /></button><h2 className="text-lg font-bold text-[#111418]">เลือกข้อสอบ</h2></div> <div className="p-4 max-w-4xl mx-auto w-full"> {exams.length === 0 ? <div className="text-center py-10 text-slate-500"><Icon name="sentiment_dissatisfied" className="text-4xl mb-2" /><p>ยังไม่มีข้อสอบในระบบ</p></div> : ( <div className="flex flex-col gap-3">{exams.map((exam) => ( <div key={exam.id} onClick={() => onStartExam(exam)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:shadow-md transition-shadow cursor-pointer flex items-center justify-between"><div className="flex items-center gap-4"><div className="w-12 h-12 rounded-lg bg-blue-50 flex items-center justify-center text-primary"><Icon name="description" /></div><div><h4 className="font-bold text-[#111418] mb-1">{exam.title}</h4><p className="text-xs text-slate-500">{exam.questions?.length || 0} ข้อ • {Math.floor((exam.timeLimit || 1800) / 60)} นาที</p></div></div><Icon name="chevron_right" className="text-slate-400" /></div> ))}</div> )} </div> <BottomNav active="category" onNavigate={onNavigate} /> </div> ); }
+        function HistoryScreen({ user, onNavigate }) { /* ...same... */ const [history, setHistory] = useState([]); const [loading, setLoading] = useState(true); useEffect(() => { if (!user) return; const fetch = async () => { try { const snap = await db.collection('exam_results').where('userId', '==', user.uid).orderBy('date', 'desc').get(); setHistory(snap.docs.map(doc => ({ id: doc.id, ...doc.data(), dateString: doc.data().date?.toDate ? doc.data().date.toDate().toLocaleDateString('th-TH') : 'N/A' }))); } catch(e){} finally { setLoading(false); } }; fetch(); }, [user]); return ( <div className="min-h-screen bg-[#f6f7f8] pb-24"> <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm"><button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button><h1 className="text-lg font-bold">ประวัติการสอบ</h1><div className="w-8"></div></div> {loading ? <LoadingSpinner /> : <div className="px-4 py-4 flex flex-col gap-3">{history.map(item => (<div key={item.id} className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm flex flex-col gap-3"><div className="flex justify-between items-start"><div className="flex gap-3"><div className={`w-10 h-10 rounded-lg flex items-center justify-center ${item.status === 'pass' ? 'bg-blue-50 text-primary' : 'bg-red-50 text-red-500'}`}><Icon name="description" /></div><div><h4 className="font-bold text-[#111418] text-sm">{item.examTitle}</h4><p className="text-xs text-slate-500">วันที่ {item.dateString}</p></div></div><span className={`px-2 py-1 rounded-lg text-xs font-bold ${item.status === 'pass' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>{item.score}%</span></div></div>))}</div>} <BottomNav active="history" onNavigate={onNavigate} /> </div> ); }
+        function ProfileScreen({ user, onNavigate, onLogout }) { /* ...same... */ return ( <div className="min-h-screen bg-[#f6f7f8] pb-24"> <div className="bg-white pb-4"><div className="flex items-center justify-between p-4"><button onClick={() => onNavigate('home')}><Icon name="arrow_back" className="text-[#111418]" /></button><h2 className="text-lg font-bold">โปรไฟล์</h2><div className="w-6"></div></div><div className="flex flex-col items-center gap-3"><div className="w-24 h-24 rounded-full bg-slate-200 relative border-4 border-white shadow-md flex items-center justify-center"><span className="text-4xl text-slate-400 font-bold">{user?.name ? user.name.charAt(0) : 'U'}</span></div><div className="text-center"><h3 className="text-xl font-bold text-[#111418]">{user?.name || 'User'}</h3><p className="text-sm text-slate-500">{user?.email}</p></div></div></div> <div className="mt-4 px-4"><button onClick={onLogout} className="w-full py-3 text-red-600 font-bold bg-white rounded-xl shadow-sm border border-slate-200 hover:bg-red-50 transition-colors">ออกจากระบบ</button></div> <BottomNav active="profile" onNavigate={onNavigate} /> </div> ); }
+        function QuestionEditorModal({ question, onClose, onSave }) { const [data, setData] = useState(question ? {...question} : { question: '', options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}], correct: 'A', explanation: '' }); const handleOptionChange = (idx, val) => { const newOpts = [...data.options]; newOpts[idx].text = val; setData({...data, options: newOpts}); }; return ( <div className="modal-overlay" onClick={onClose}> <div className="bg-white w-full max-w-lg mx-4 rounded-xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}> <div className="flex justify-between items-center mb-4"> <h3 className="font-bold text-lg">{question ? 'แก้ไขข้อสอบ' : 'เพิ่มข้อสอบใหม่'}</h3> <button onClick={onClose}><Icon name="close" /></button> </div> <div className="space-y-3"> <div> <label className="text-sm font-medium">โจทย์</label> <textarea className="w-full border p-2 rounded-lg" rows="3" value={data.question} onChange={e => setData({...data, question: e.target.value})}></textarea> </div> <div> <label className="text-sm font-medium">ตัวเลือก</label> {data.options.map((opt, i) => ( <div key={i} className="flex gap-2 items-center mt-1"> <span className="w-6 text-center font-bold">{opt.id}</span> <input className="flex-1 border p-2 rounded-lg" value={opt.text} onChange={e => handleOptionChange(i, e.target.value)} /> <input type="radio" name="correct" checked={data.correct === opt.id} onChange={() => setData({...data, correct: opt.id})} className="w-4 h-4" /> </div> ))} </div> <div> <label className="text-sm font-medium">คำอธิบายเฉลย</label> <textarea className="w-full border p-2 rounded-lg" rows="2" value={data.explanation} onChange={e => setData({...data, explanation: e.target.value})}></textarea> </div> </div> <div className="mt-6 flex gap-2"> <button onClick={() => onSave(data)} className="flex-1 bg-primary text-white py-2 rounded-lg font-bold">บันทึก</button> <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 py-2 rounded-lg font-bold">ยกเลิก</button> </div> </div> </div> ); }
+        function AdminExamScreen({ onNavigate }) { const [viewMode, setViewMode] = useState('list'); const [exams, setExams] = useState([]); const [editorData, setEditorData] = useState({ id: null, title: '', questions: [] }); const [isUploading, setIsUploading] = useState(false); const [editingQuestionIndex, setEditingQuestionIndex] = useState(null); const [showQuestionModal, setShowQuestionModal] = useState(false); useEffect(() => { const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').onSnapshot(snapshot => { setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))); }); return () => unsubscribe(); }, []); const handleDeleteExam = async (id) => { if(confirm('คุณต้องการลบชุดข้อสอบนี้ใช่หรือไม่?')) { try { await db.collection('exams').doc(id).delete(); } catch (e) { alert('เกิดข้อผิดพลาดในการลบ'); } } }; const handleEditExam = (exam) => { setEditorData({ ...exam }); setViewMode('editor'); }; const handleCreateExam = () => { setEditorData({ id: null, title: 'ชุดข้อสอบใหม่', questions: [] }); setViewMode('editor'); }; const handleFileUpload = (event) => { const file = event.target.files[0]; if (!file) return; setIsUploading(true); const reader = new FileReader(); reader.onload = async (e) => { const text = e.target.result; const lines = text.split('\n'); const newQuestions = []; for (let line of lines) { line = line.trim(); if (!line) continue; const matches = line.match(/^"(.+)","(.+)","(.+)","(.+)","(.+)","(.+)","(.+)"$/); if (matches && matches.length === 8) { newQuestions.push({ question: matches[1], options: [{ id: 'A', text: matches[2] }, { id: 'B', text: matches[3] }, { id: 'C', text: matches[4] }, { id: 'D', text: matches[5] }], correct: matches[6], explanation: matches[7], id: Date.now() + Math.random() }); } } setEditorData({ id: null, title: `ชุดข้อสอบนำเข้า ${new Date().toLocaleString('th-TH')}`, questions: newQuestions }); setViewMode('editor'); setIsUploading(false); event.target.value = null; }; reader.readAsText(file); }; const saveExamToFirestore = async () => { try { const dataToSave = { title: editorData.title, questions: editorData.questions, timeLimit: editorData.questions.length * 60, subject: "ทั่วไป", createdAt: editorData.createdAt || new Date() }; if (editorData.id) { await db.collection('exams').doc(editorData.id).update(dataToSave); } else { await db.collection('exams').add(dataToSave); } alert('บันทึกสำเร็จ'); setViewMode('list'); } catch (e) { console.error(e); alert('บันทึกไม่สำเร็จ'); } }; const handleSaveQuestion = (qData) => { const newQuestions = [...editorData.questions]; if (editingQuestionIndex !== null) { newQuestions[editingQuestionIndex] = qData; } else { newQuestions.push({ ...qData, id: Date.now() + Math.random() }); } setEditorData({ ...editorData, questions: newQuestions }); setShowQuestionModal(false); }; const handleDeleteQuestion = (idx) => { if (confirm('ลบข้อนี้?')) { const newQuestions = editorData.questions.filter((_, i) => i !== idx); setEditorData({ ...editorData, questions: newQuestions }); } }; if (viewMode === 'list') { return ( <div className="pb-24 bg-[#f6f7f8] min-h-screen"> <div className="sticky top-0 z-20 flex items-center justify-between bg-white p-4 border-b border-slate-100 shadow-sm"> <h2 className="text-lg font-bold text-[#111418]">จัดการข้อสอบ</h2> <div className="flex gap-2"> <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" disabled={isUploading} /> <label htmlFor="csv-upload" className={`bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 cursor-pointer hover:bg-green-700 transition-colors ${isUploading ? 'opacity-50' : ''}`}> {isUploading ? '...' : <Icon name="upload_file" className="text-base" />} CSV </label> <button onClick={handleCreateExam} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1"> <Icon name="add" className="text-base" /> สร้าง </button> </div> </div> <div className="p-4 max-w-4xl mx-auto w-full flex flex-col gap-3"> {exams.map(exam => ( <div key={exam.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4"> <div className="flex gap-3"> <div className="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shrink-0"><Icon name="description" /></div> <div> <h4 className="font-bold text-[#111418]">{exam.title}</h4> <p className="text-xs text-slate-500">{exam.questions?.length || 0} ข้อ • {exam.createdAt?.toDate ? exam.createdAt.toDate().toLocaleDateString('th-TH') : 'N/A'}</p> </div> </div> <div className="flex gap-2 self-end sm:self-center"> <button onClick={() => handleEditExam(exam)} className="p-2 text-slate-400 hover:text-admin-primary bg-slate-50 rounded-lg"><Icon name="edit" /></button> <button onClick={() => handleDeleteExam(exam.id)} className="p-2 text-slate-400 hover:text-red-500 bg-slate-50 rounded-lg"><Icon name="delete" /></button> </div> </div> ))} </div> <AdminBottomNav active="admin-exams" onNavigate={onNavigate} /> </div> ); } return ( <div className="bg-[#f6f7f8] min-h-screen flex flex-col"> <div className="sticky top-0 z-20 bg-white p-4 border-b border-slate-100 shadow-sm flex items-center justify-between"> <div className="flex items-center gap-2"> <button onClick={() => setViewMode('list')}><Icon name="arrow_back" /></button> <h2 className="text-lg font-bold">แก้ไขข้อสอบ</h2> </div> <button onClick={saveExamToFirestore} className="bg-primary text-white px-4 py-1.5 rounded-lg font-bold shadow-lg shadow-blue-500/30">บันทึกชุดข้อสอบ</button> </div> <div className="p-4 max-w-4xl mx-auto w-full flex-1 overflow-y-auto pb-24"> <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4"> <label className="text-sm font-bold text-slate-500">ชื่อชุดข้อสอบ</label> <input className="w-full text-lg font-bold border-b border-slate-200 py-2 focus:border-primary outline-none bg-transparent" value={editorData.title} onChange={e => setEditorData({...editorData, title: e.target.value})} placeholder="ตั้งชื่อชุดข้อสอบ..." /> </div> <div className="flex items-center justify-between mb-2 px-1"> <h3 className="font-bold text-slate-700">รายการข้อสอบ ({editorData.questions.length})</h3> <button onClick={() => { setEditingQuestionIndex(null); setShowQuestionModal(true); }} className="text-primary text-sm font-bold flex items-center gap-1"> <Icon name="add_circle" /> เพิ่มข้อ </button> </div> <div className="space-y-3"> {editorData.questions.map((q, idx) => ( <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100"> <div className="flex justify-between items-start gap-4"> <div className="flex-1"> <div className="flex gap-2"> <span className="font-bold text-slate-400">{idx + 1}.</span> <p className="font-medium text-[#111418]">{q.question}</p> </div> <p className="text-xs text-green-600 mt-1 ml-6">เฉลย: {q.correct}</p> </div> <div className="flex gap-1 shrink-0"> <button onClick={() => { setEditingQuestionIndex(idx); setShowQuestionModal(true); }} className="p-1.5 text-slate-400 hover:text-admin-primary bg-slate-50 rounded"><Icon name="edit" className="text-sm" /></button> <button onClick={() => handleDeleteQuestion(idx)} className="p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 rounded"><Icon name="delete" className="text-sm" /></button> </div> </div> </div> ))} </div> </div> {showQuestionModal && ( <QuestionEditorModal question={editingQuestionIndex !== null ? editorData.questions[editingQuestionIndex] : null} onClose={() => setShowQuestionModal(false)} onSave={handleSaveQuestion} /> )} </div> ); }
+        function AdminHomeScreen({ user, onNavigate, onLogout }) { const ADMIN_STATS = [ { title: "ผู้ใช้งานทั้งหมด", value: "...", icon: "group", color: "bg-blue-500" }, { title: "ข้อสอบในระบบ", value: "...", icon: "library_books", color: "bg-green-500" }, ]; return ( <div className="pb-24 bg-[#f6f7f8] min-h-screen"> <header className="flex items-center justify-between bg-white p-4 sticky top-0 z-10 shadow-sm border-b border-purple-100"> <div className="flex items-center gap-3"> <div className="w-10 h-10 rounded-full bg-admin-primary text-white flex items-center justify-center"><Icon name="admin_panel_settings" /></div> <div className="flex flex-col"><span className="text-xs text-slate-500 font-medium">Administrator</span><h2 className="text-lg font-bold leading-tight text-admin-primary">{user?.name}</h2></div> </div> <button onClick={onLogout} className="p-2 text-slate-400 hover:text-red-500"><Icon name="logout" /></button> </header> <main className="flex flex-col gap-6 px-4 pt-6 max-w-4xl mx-auto w-full"> <div className="grid grid-cols-2 md:grid-cols-4 gap-3"> {ADMIN_STATS.map((stat, idx) => ( <div key={idx} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex flex-col gap-2"> <div className={`w-10 h-10 rounded-lg ${stat.color} bg-opacity-10 flex items-center justify-center`}><Icon name={stat.icon} className={`text-${stat.color.split('-')[1]}-600`} /></div> <div><p className="text-slate-500 text-xs">{stat.title}</p><p className="text-xl font-bold text-[#111418]">{stat.value}</p></div> </div> ))} </div> </main> <AdminBottomNav active="admin-home" onNavigate={onNavigate} /> </div> ); }
+        function ExamScreen({ examData, examState, setExamState, onAnswer, onSubmit, onNavigate }) { const currentQ = examData.questions[examState.currentQuestionIndex]; const formatTime = (seconds) => { const mins = Math.floor(seconds / 60); const secs = seconds % 60; return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`; }; return ( <div className="flex flex-col h-screen bg-white"> <header className="flex-none flex items-center justify-between p-4 border-b border-slate-100"> <button onClick={() => onNavigate('home')}><Icon name="close" className="text-slate-800" /></button> <h2 className="font-bold text-lg text-[#111418] truncate pr-2 max-w-[200px]">{examData.title}</h2> <div className="w-6"></div> </header> <div className="flex-none px-4 py-3 bg-white shadow-sm z-10"> <div className="flex justify-between items-center mb-2 max-w-2xl mx-auto w-full"> <div className="flex items-center gap-2 text-primary"> <Icon name="timer" className="text-xl" /> <span className="text-lg font-bold tabular-nums">{formatTime(examState.timeRemaining)}</span> </div> <span className="text-xs text-slate-500 font-medium">ข้อที่ {examState.currentQuestionIndex + 1}/{examData.questions.length}</span> </div> <div className="max-w-2xl mx-auto w-full"> <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden"> <div className="bg-primary h-full transition-all duration-300" style={{ width: `${((examState.currentQuestionIndex + 1) / examData.questions.length) * 100}%` }}></div> </div> </div> </div> <main className="flex-1 overflow-y-auto p-4 pb-20"> <div className="flex flex-col gap-4 max-w-2xl mx-auto w-full"> <h2 className="text-xl font-bold text-[#111418] leading-snug">{currentQ.question}</h2> <div className="flex flex-col gap-3"> {currentQ.options.map((opt) => { const isSelected = examState.answers[currentQ.id] === opt.id; return ( <label key={opt.id} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${isSelected ? 'border-primary bg-primary/5' : 'border-slate-200 hover:border-primary/50'}`}> <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? 'border-primary' : 'border-slate-300'}`}> {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary" />} </div> <input type="radio" name={`q-${currentQ.id}`} className="hidden" onChange={() => onAnswer(currentQ.id, opt.id)} checked={isSelected} /> <span className={`text-base font-medium ${isSelected ? 'text-primary' : 'text-[#111418]'}`}>{opt.text}</span> </label> ); })} </div> </div> </main> <footer className="flex-none p-4 border-t border-slate-100 bg-white pb-safe"> <div className="max-w-2xl mx-auto flex gap-4 w-full"> <button onClick={() => setExamState(p => ({ ...p, currentQuestionIndex: Math.max(0, p.currentQuestionIndex - 1) }))} disabled={examState.currentQuestionIndex === 0} className="flex-1 h-12 rounded-xl border border-slate-200 text-[#111418] font-bold disabled:opacity-50 hover:bg-slate-50 flex items-center justify-center gap-2"> <Icon name="chevron_left" /> ก่อนหน้า </button> {examState.currentQuestionIndex === examData.questions.length - 1 ? ( <button onClick={onSubmit} className="flex-1 h-12 rounded-xl bg-green-600 text-white font-bold hover:bg-green-700 shadow-lg flex items-center justify-center gap-2"> ส่งข้อสอบ <Icon name="check_circle" /> </button> ) : ( <button onClick={() => setExamState(p => ({ ...p, currentQuestionIndex: Math.min(examData.questions.length - 1, p.currentQuestionIndex + 1) }))} className="flex-1 h-12 rounded-xl bg-primary text-white font-bold hover:bg-blue-600 shadow-lg flex items-center justify-center gap-2"> ถัดไป <Icon name="chevron_right" /> </button> )} </div> </footer> </div> ); }
+        function ResultScreen({ examState, totalQuestions, onNavigate }) { const isPass = examState.score >= 60; return ( <div className="flex flex-col min-h-screen bg-white"> <div className="flex items-center p-4 border-b border-slate-100"> <button onClick={() => onNavigate('home')} className="mr-auto"><Icon name="close" className="text-[#111418]" /></button> <h2 className="text-lg font-bold flex-1 text-center pr-6">ผลการสอบ</h2> </div> <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center"> <div className="relative w-48 h-48 flex items-center justify-center mb-6"> <div className="flex flex-col items-center"> <span className="text-slate-500 text-sm font-medium">คะแนนรวม</span> <span className="text-5xl font-bold text-[#111418]">{examState.score}</span> <span className="text-sm text-slate-400">/ 100</span> </div> </div> <h2 className="text-2xl font-bold text-[#111418] mb-2">{isPass ? 'ยินดีด้วย!' : 'พยายามใหม่นะ'}</h2> <p className="text-slate-500 mb-8">{isPass ? 'คุณผ่านเกณฑ์การทดสอบ' : 'คุณยังไม่ผ่านเกณฑ์ 60%'}</p> <button onClick={() => onNavigate('home')} className="w-full max-w-xs h-12 flex items-center justify-center rounded-xl bg-primary text-white font-bold hover:bg-blue-600">กลับหน้าหลัก</button> </div> </div> ) }
+        function BottomNav({ active, onNavigate }) { const navItems = [{ id: 'home', icon: 'home', label: 'หน้าหลัก' }, { id: 'category', icon: 'menu_book', label: 'วิชาสอบ' }, { id: 'history', icon: 'bar_chart', label: 'ประวัติ' }, { id: 'profile', icon: 'person', label: 'โปรไฟล์' }]; return <div className="fixed bottom-0 w-full bg-white border-t border-slate-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">{navItems.map((item) => (<button key={item.id} onClick={() => onNavigate(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-primary' : 'text-slate-400'}`}><Icon name={item.icon} className={active === item.id ? 'fill-current' : ''} style={{ fontVariationSettings: active === item.id ? "'FILL' 1" : "'FILL' 0" }} /><span className="text-[10px] font-medium">{item.label}</span></button>))}</div>; }
+        function AdminBottomNav({ active, onNavigate }) { const navItems = [{ id: 'admin-home', icon: 'dashboard', label: 'ภาพรวม' }, { id: 'admin-exams', icon: 'library_books', label: 'ข้อสอบ' }, { id: 'admin-users', icon: 'group', label: 'ผู้ใช้' }, { id: 'home', icon: 'visibility', label: 'ดูหน้าเว็บ' }]; return <div className="fixed bottom-0 w-full bg-white border-t border-purple-100 px-6 py-2 flex justify-between items-center z-50 pb-safe max-w-[inherit] left-auto right-auto">{navItems.map((item) => (<button key={item.id} onClick={() => onNavigate(item.id)} className={`flex flex-col items-center gap-1 p-2 transition-colors ${active === item.id ? 'text-admin-primary' : 'text-slate-400'}`}><Icon name={item.icon} /><span className="text-[10px] font-medium">{item.label}</span></button>))}</div>; }
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
