@@ -108,9 +108,8 @@
 
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
-            firebase.firestore().enablePersistence().catch(err => {
-                console.log('Persistence disabled or error:', err.code);
-            });
+            // DISABLED PERSISTENCE TO FORCE NETWORK SYNC AND REVEAL ERRORS
+            // firebase.firestore().enablePersistence().catch(err => { console.log('Persistence disabled:', err.code); });
         }
         const auth = firebase.auth();
         const db = firebase.firestore();
@@ -160,6 +159,16 @@
             return (
                 <div className="flex justify-center items-center h-full w-full py-10">
                     <div className="spinner"></div>
+                </div>
+            );
+        }
+
+        function ErrorBanner({ message }) {
+            if (!message) return null;
+            return (
+                <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm flex items-center gap-2 mb-4 mx-4">
+                    <Icon name="error" />
+                    <span>{message}</span>
                 </div>
             );
         }
@@ -259,11 +268,9 @@
                 });
                 const scorePercentage = Math.round((correctCount / selectedExam.questions.length) * 100);
                 
-                // Update State and Navigate IMMEDIATELY (Don't wait for DB)
                 setExamState(prev => ({ ...prev, isFinished: true, score: scorePercentage }));
                 navigate('result');
 
-                // Save to DB in background
                 if (user) {
                     db.collection('exam_results').add({
                         userId: user.uid,
@@ -282,8 +289,6 @@
                         setExamState(prev => {
                             if (prev.timeRemaining <= 1) {
                                 clearInterval(interval);
-                                // Don't call submitExam here directly to avoid state closure issues
-                                // Use a flag or separate effect if needed, but for now strict timer end logic:
                                 return { ...prev, timeRemaining: 0, isTimeUp: true }; 
                             }
                             return { ...prev, timeRemaining: prev.timeRemaining - 1 };
@@ -293,7 +298,6 @@
                 return () => clearInterval(interval);
             }, [currentScreen, examState.isFinished]);
 
-            // Watch for Time Up
             useEffect(() => {
                 if (examState.isTimeUp && !examState.isFinished) {
                     submitExam();
@@ -496,20 +500,22 @@
         function HomeScreen({ user, onNavigate, onStartExam }) {
             const [exams, setExams] = useState([]);
             const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
+            const [error, setError] = useState(null);
             
             useEffect(() => {
-                // Remove orderBy to prevent missing index issues
+                // Fetch ALL exams and Sort Client-side to avoid Index errors
                 const unsubscribeExams = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    // Client-side sort
+                    // Robust Sort: Handles both Firestore Timestamp and JS Date
                     data.sort((a, b) => {
-                         const timeA = a.createdAt?.seconds || 0;
-                         const timeB = b.createdAt?.seconds || 0;
+                         const timeA = a.createdAt?.seconds ? a.createdAt.seconds : (a.createdAt?.getTime ? a.createdAt.getTime() / 1000 : 0);
+                         const timeB = b.createdAt?.seconds ? b.createdAt.seconds : (b.createdAt?.getTime ? b.createdAt.getTime() / 1000 : 0);
                          return timeB - timeA;
                     });
                     setExams(data.length ? data.slice(0, 5) : [INITIAL_MOCK_EXAM]); 
                 }, error => {
                     console.error("Error fetching exams:", error);
+                    setError("ไม่สามารถโหลดข้อมูลข้อสอบได้: " + error.message);
                 });
 
                 let unsubscribeStats = () => {};
@@ -555,6 +561,7 @@
                         </button>
                     </header>
                     <main className="flex flex-col gap-6 px-4 pt-6 max-w-2xl mx-auto w-full">
+                        <ErrorBanner message={error} />
                         <div className="bg-primary rounded-2xl p-5 shadow-lg shadow-blue-500/20 text-white relative overflow-hidden">
                              <div className="absolute -right-6 -top-6 w-32 h-32 rounded-full bg-white/10 blur-2xl"></div>
                              <div className="relative z-10">
@@ -709,20 +716,23 @@
             const [showAddModal, setShowAddModal] = useState(false);
             const [viewingContent, setViewingContent] = useState(null);
             const [editingContent, setEditingContent] = useState(null);
+            const [error, setError] = useState(null);
 
             useEffect(() => {
-                // Remove orderBy to prevent missing index issues
                 const unsubscribe = db.collection('videos').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'video' }));
-                    // Client-side sort
                     data.sort((a, b) => {
-                         const timeA = a.createdAt?.seconds || 0;
-                         const timeB = b.createdAt?.seconds || 0;
+                         const timeA = a.createdAt?.seconds ? a.createdAt.seconds : (a.createdAt?.getTime ? a.createdAt.getTime() / 1000 : 0);
+                         const timeB = b.createdAt?.seconds ? b.createdAt.seconds : (b.createdAt?.getTime ? b.createdAt.getTime() / 1000 : 0);
                          return timeB - timeA;
                     });
                     setVideos(data);
                     setLoading(false);
-                }, error => { console.error(error); setLoading(false); });
+                }, error => { 
+                    console.error(error); 
+                    setLoading(false); 
+                    setError("โหลดข้อมูลวิดีโอไม่สำเร็จ: " + error.message);
+                });
                 return () => unsubscribe();
             }, []);
 
@@ -766,6 +776,7 @@
                     </div>
 
                     <div className="p-4 max-w-4xl mx-auto w-full">
+                        <ErrorBanner message={error} />
                         {loading ? <LoadingSpinner /> : videos.length === 0 ? (
                             <div className="text-center py-10 text-slate-500">
                                 <Icon name="video_library" className="text-4xl mb-2" />
@@ -820,20 +831,23 @@
             const [showAddModal, setShowAddModal] = useState(false);
             const [viewingContent, setViewingContent] = useState(null);
             const [editingContent, setEditingContent] = useState(null);
+            const [error, setError] = useState(null);
 
             useEffect(() => {
-                // Remove orderBy to prevent missing index issues
                 const unsubscribe = db.collection('summaries').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    // Client-side sort
                     data.sort((a, b) => {
-                         const timeA = a.createdAt?.seconds || 0;
-                         const timeB = b.createdAt?.seconds || 0;
+                         const timeA = a.createdAt?.seconds ? a.createdAt.seconds : (a.createdAt?.getTime ? a.createdAt.getTime() / 1000 : 0);
+                         const timeB = b.createdAt?.seconds ? b.createdAt.seconds : (b.createdAt?.getTime ? b.createdAt.getTime() / 1000 : 0);
                          return timeB - timeA;
                     });
                     setSummaries(data);
                     setLoading(false);
-                }, error => { console.error(error); setLoading(false); });
+                }, error => { 
+                    console.error(error); 
+                    setLoading(false); 
+                    setError("โหลดข้อมูลสรุปไม่สำเร็จ: " + error.message);
+                });
                 return () => unsubscribe();
             }, []);
 
@@ -877,6 +891,7 @@
                     </div>
 
                     <div className="p-4 max-w-4xl mx-auto w-full">
+                        <ErrorBanner message={error} />
                         {loading ? <LoadingSpinner /> : summaries.length === 0 ? (
                             <div className="text-center py-10 text-slate-500">
                                 <Icon name="folder_open" className="text-4xl mb-2" />
@@ -929,21 +944,23 @@
             const [exams, setExams] = useState([]);
             const [loading, setLoading] = useState(true);
             const [activeTab, setActiveTab] = useState('part_a'); // part_a, part_b
+            const [error, setError] = useState(null);
 
             useEffect(() => {
-                // Remove orderBy to prevent missing index issues
                 const unsubscribe = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                      // Client-side sort by createdAt descending
                      data.sort((a, b) => {
-                         const timeA = a.createdAt?.seconds || 0;
-                         const timeB = b.createdAt?.seconds || 0;
+                         const timeA = a.createdAt?.seconds ? a.createdAt.seconds : (a.createdAt?.getTime ? a.createdAt.getTime() / 1000 : 0);
+                         const timeB = b.createdAt?.seconds ? b.createdAt.seconds : (b.createdAt?.getTime ? b.createdAt.getTime() / 1000 : 0);
                          return timeB - timeA;
                     });
                     setExams(data.length ? data : []);
                     setLoading(false);
                 }, error => {
                     console.error("Error fetching exams:", error);
+                    setError("โหลดแบบทดสอบไม่สำเร็จ: " + error.message);
+                    setLoading(false);
                 });
                 return () => unsubscribe();
             }, []);
@@ -980,6 +997,7 @@
                     </div>
                     
                     <div className="p-4 max-w-4xl mx-auto w-full">
+                        <ErrorBanner message={error} />
                         {loading ? <LoadingSpinner /> : filteredExams.length === 0 ? (
                             <div className="text-center py-10 text-slate-500">
                                 <Icon name="sentiment_dissatisfied" className="text-4xl mb-2" />
@@ -1299,40 +1317,43 @@
             const [showContentModal, setShowContentModal] = useState(false);
             
             const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
 
             useEffect(() => {
                 setLoading(true);
+                setError(null);
                 let unsubscribe;
 
                 if (activeTab === 'exams') {
-                    // Removed orderBy and limit to ensure data shows up even without index
                     unsubscribe = db.collection('exams').onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        // Client-side sort
                          data.sort((a, b) => {
-                             const timeA = a.createdAt?.seconds || 0;
-                             const timeB = b.createdAt?.seconds || 0;
+                             const timeA = a.createdAt?.seconds ? a.createdAt.seconds : (a.createdAt?.getTime ? a.createdAt.getTime() / 1000 : 0);
+                             const timeB = b.createdAt?.seconds ? b.createdAt.seconds : (b.createdAt?.getTime ? b.createdAt.getTime() / 1000 : 0);
                              return timeB - timeA;
                         });
                         setExams(data);
                         setLoading(false);
                     }, error => {
-                        console.error("Error fetching exams:", error);
+                        console.error(error);
                         setLoading(false);
+                        setError("ไม่สามารถโหลดรายการข้อสอบได้: " + error.message);
                     });
                 } else {
                     const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
-                    // Remove orderBy for consistent behavior
                     unsubscribe = db.collection(collectionName).onSnapshot(snapshot => {
                          const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                        // Client-side sort
                          data.sort((a, b) => {
-                             const timeA = a.createdAt?.seconds || 0;
-                             const timeB = b.createdAt?.seconds || 0;
+                             const timeA = a.createdAt?.seconds ? a.createdAt.seconds : (a.createdAt?.getTime ? a.createdAt.getTime() / 1000 : 0);
+                             const timeB = b.createdAt?.seconds ? b.createdAt.seconds : (b.createdAt?.getTime ? b.createdAt.getTime() / 1000 : 0);
                              return timeB - timeA;
                         });
                         setContentItems(data);
                         setLoading(false);
+                    }, error => {
+                        console.error(error);
+                        setLoading(false);
+                        setError("ไม่สามารถโหลดเนื้อหาได้: " + error.message);
                     });
                 }
                 
@@ -1342,7 +1363,7 @@
             // --- Handlers for Exams ---
             const handleDeleteExam = async (id) => {
                 if(confirm('คุณต้องการลบชุดข้อสอบนี้ใช่หรือไม่?')) {
-                    try { await db.collection('exams').doc(id).delete(); } catch (e) { alert('เกิดข้อผิดพลาดในการลบ'); }
+                    try { await db.collection('exams').doc(id).delete(); } catch (e) { alert('เกิดข้อผิดพลาดในการลบ: ' + e.message); }
                 }
             };
             const handleEditExam = (exam) => { 
@@ -1431,7 +1452,7 @@
                     else await db.collection('exams').add(dataToSave);
                     alert('บันทึกสำเร็จ');
                     setViewMode('list');
-                } catch (e) { console.error(e); alert('บันทึกไม่สำเร็จ'); }
+                } catch (e) { console.error(e); alert('บันทึกไม่สำเร็จ: ' + e.message); }
             };
 
             const handleSaveQuestion = (qData) => {
@@ -1467,7 +1488,7 @@
                     setShowContentModal(false);
                     setEditingContent(null);
                 } catch (error) {
-                    alert('เกิดข้อผิดพลาดในการบันทึก');
+                    alert('เกิดข้อผิดพลาดในการบันทึก: ' + error.message);
                 }
             };
 
@@ -1510,6 +1531,7 @@
                         </div>
 
                         <div className="p-4 max-w-4xl mx-auto w-full flex flex-col gap-3">
+                            <ErrorBanner message={error} />
                             {loading && <LoadingSpinner />}
                             
                             {!loading && activeTab === 'exams' && exams.map(exam => (
