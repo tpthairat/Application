@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TheONE สอบราชการ</title>
+    <title>Civil Service Exam Prep (Fixed Submit & Edit)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -250,8 +250,8 @@
                 }
             };
 
-            const submitExam = async () => {
-                if (!selectedExam) return; // Prevent crashes if selectedExam is missing
+            const submitExam = () => {
+                if (!selectedExam) return;
 
                 let correctCount = 0;
                 selectedExam.questions.forEach(q => {
@@ -259,22 +259,20 @@
                 });
                 const scorePercentage = Math.round((correctCount / selectedExam.questions.length) * 100);
                 
-                if (user) {
-                    try {
-                        await db.collection('exam_results').add({
-                            userId: user.uid,
-                            examTitle: selectedExam.title,
-                            score: scorePercentage,
-                            date: new Date(),
-                            status: scorePercentage >= 60 ? 'pass' : 'fail'
-                        });
-                    } catch (e) { console.error("Error saving exam:", e); }
-                }
-
-                // IMPORTANT: Ensure state is updated BEFORE navigation or passed directly via state manager if needed.
-                // Here we update examState and then switch screen.
+                // Update State and Navigate IMMEDIATELY (Don't wait for DB)
                 setExamState(prev => ({ ...prev, isFinished: true, score: scorePercentage }));
                 navigate('result');
+
+                // Save to DB in background
+                if (user) {
+                    db.collection('exam_results').add({
+                        userId: user.uid,
+                        examTitle: selectedExam.title,
+                        score: scorePercentage,
+                        date: new Date(),
+                        status: scorePercentage >= 60 ? 'pass' : 'fail'
+                    }).catch(e => console.error("Error saving exam background:", e));
+                }
             };
 
             useEffect(() => {
@@ -284,8 +282,9 @@
                         setExamState(prev => {
                             if (prev.timeRemaining <= 1) {
                                 clearInterval(interval);
-                                submitExam(); // Auto-submit when time up
-                                return { ...prev, timeRemaining: 0 };
+                                // Don't call submitExam here directly to avoid state closure issues
+                                // Use a flag or separate effect if needed, but for now strict timer end logic:
+                                return { ...prev, timeRemaining: 0, isTimeUp: true }; 
                             }
                             return { ...prev, timeRemaining: prev.timeRemaining - 1 };
                         });
@@ -293,6 +292,14 @@
                 }
                 return () => clearInterval(interval);
             }, [currentScreen, examState.isFinished]);
+
+            // Watch for Time Up
+            useEffect(() => {
+                if (examState.isTimeUp && !examState.isFinished) {
+                    submitExam();
+                }
+            }, [examState.isTimeUp]);
+
 
             if (currentScreen === 'loading') return <div className="min-h-screen flex items-center justify-center bg-white"><div className="spinner"></div></div>;
 
@@ -885,7 +892,7 @@
                         )}
                     </div>
                     
-                    {showAddModal && <AddContentModal onClose={() => setShowAddModal(false)} onSave={handleSaveContent} initialData={editingContent} />}
+                    {showAddModal && <AddContentModal onClose={() => setShowAddModal(false)} onSave={handleSaveContent} />}
                     {viewingContent && <ContentReaderModal content={viewingContent} onClose={() => setViewingContent(null)} />}
                     
                     <BottomNav active="summary" onNavigate={onNavigate} />
@@ -1177,7 +1184,7 @@
         }
 
         function QuestionEditorModal({ question, onClose, onSave }) {
-            // FIX: Initialize state only once, but update it when 'question' prop changes
+            // Initialize state with default or existing question, use key to reset
             const [data, setData] = useState({
                 question: '',
                 options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}],
@@ -1185,12 +1192,11 @@
                 explanation: ''
             });
 
-            // Effect to sync state with props when modal opens or question changes
+            // Effect to force update state when question prop changes
             useEffect(() => {
                 if (question) {
                     setData({...question});
                 } else {
-                    // Reset for new question
                     setData({
                         question: '',
                         options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}],
@@ -1201,11 +1207,8 @@
             }, [question]);
 
             const handleOptionChange = (idx, val) => {
-                // FIX: Avoid mutation of state objects
-                const newOpts = data.options.map((opt, i) => {
-                    if (i === idx) return { ...opt, text: val };
-                    return opt;
-                });
+                const newOpts = [...data.options];
+                newOpts[idx] = { ...newOpts[idx], text: val };
                 setData({...data, options: newOpts});
             };
 
@@ -1551,7 +1554,12 @@
                         </div>
                     </div>
                     {showQuestionModal && (
-                        <QuestionEditorModal question={editingQuestionIndex !== null ? editorData.questions[editingQuestionIndex] : null} onClose={() => setShowQuestionModal(false)} onSave={handleSaveQuestion} />
+                        <QuestionEditorModal 
+                            key={editingQuestionIndex !== null ? editingQuestionIndex : 'new'} 
+                            question={editingQuestionIndex !== null ? editorData.questions[editingQuestionIndex] : null} 
+                            onClose={() => setShowQuestionModal(false)} 
+                            onSave={handleSaveQuestion} 
+                        />
                     )}
                 </div>
             );
@@ -1669,4 +1677,3 @@
     </script>
 </body>
 </html>
-
