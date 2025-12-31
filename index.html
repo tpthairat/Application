@@ -37,7 +37,7 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Firebase SDK -->
+    <!-- Firebase SDK (v10 Modular via CDN for Compat) -->
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -76,7 +76,6 @@
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* Modal Overlay */
         .modal-overlay {
             background-color: rgba(0, 0, 0, 0.5);
             position: fixed;
@@ -92,39 +91,45 @@
     <div id="root" class="w-full"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
-        // --- Firebase Config ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyDaSXAda-YiHCgsCJzQA_bnPLZKOoOy0Ek",
-            authDomain: "application-b08ac.firebaseapp.com",
-            databaseURL: "https://application-b08ac-default-rtdb.firebaseio.com",
-            projectId: "application-b08ac",
-            storageBucket: "application-b08ac.firebasestorage.app",
-            messagingSenderId: "303359329226",
-            appId: "1:303359329226:web:ca24a7031e2418f5148533",
-            measurementId: "G-J469TY8LN1"
+        // --- Firebase Initialization & Path Logic ---
+        // 1. Setup Config using Environment Variables if available
+        const getFirebaseConfig = () => {
+            try {
+                if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+                    return JSON.parse(__firebase_config);
+                }
+            } catch (e) { console.error("Error parsing config", e); }
+            return {
+                apiKey: "AIzaSyDaSXAda-YiHCgsCJzQA_bnPLZKOoOy0Ek",
+                authDomain: "application-b08ac.firebaseapp.com",
+                databaseURL: "https://application-b08ac-default-rtdb.firebaseio.com",
+                projectId: "application-b08ac",
+                storageBucket: "application-b08ac.firebasestorage.app",
+                messagingSenderId: "303359329226",
+                appId: "1:303359329226:web:ca24a7031e2418f5148533"
+            };
         };
 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
         if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
-            firebase.firestore().enablePersistence().catch(err => {
-                console.log('Persistence disabled or error:', err.code);
-            });
+            firebase.initializeApp(getFirebaseConfig());
         }
         const auth = firebase.auth();
         const db = firebase.firestore();
+
+        // 2. Helper for Strict Paths (Public Data for Sharing)
+        const getPublicColl = (collectionName) => {
+            return db.collection('artifacts').doc(appId).collection('public').doc('data').collection(collectionName);
+        };
 
         // --- Utility: Normalize Answers ---
         const normalizeAnswer = (ans) => {
             if (!ans) return '';
             const str = String(ans).trim().toUpperCase();
-            const map = {
-                '1': 'A', 'ก': 'A', 'A': 'A',
-                '2': 'B', 'ข': 'B', 'B': 'B',
-                '3': 'C', 'ค': 'C', 'C': 'C',
-                '4': 'D', 'ง': 'D', 'D': 'D'
-            };
+            const map = { '1': 'A', 'ก': 'A', 'A': 'A', '2': 'B', 'ข': 'B', 'B': 'B', '3': 'C', 'ค': 'C', 'C': 'C', '4': 'D', 'ง': 'D', 'D': 'D' };
             return map[str] || str;
         };
 
@@ -141,90 +146,133 @@
             return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
         };
 
-        // --- Mock Data ---
-        const INITIAL_MOCK_EXAM = {
-            title: "แนวข้อสอบ ก.พ. ภาค ก. (ตัวอย่าง)",
-            subject: "วิชากฎหมายและระเบียบข้าราชการ",
-            timeLimit: 30 * 60,
-            questions: [
-                 { id: 1, question: "ข้อใดต่อไปนี้ ไม่ใช่ หลักธรรมาภิบาล?", options: [{ id: 'A', text: "ก. หลักนิติธรรม" }, { id: 'B', text: "ข. หลักคุณธรรม" }, { id: 'C', text: "ค. หลักความลับ" }, { id: 'D', text: "ง. หลักความโปร่งใส" }], correct: 'C', explanation: "หลักความลับไม่ใช่หลักธรรมาภิบาล ตามระเบียบสำนักนายกรัฐมนตรีว่าด้วยการสร้างระบบบริหารกิจการบ้านเมืองและสังคมที่ดี พ.ศ. 2542" }
-            ]
-        };
-
         // --- Helper Components ---
         function Icon({ name, className = "", style = {} }) {
             return <span className={`material-symbols-outlined ${className}`} style={style}>{name}</span>;
         }
 
         function LoadingSpinner() {
-            return (
-                <div className="flex justify-center items-center h-full w-full py-10">
-                    <div className="spinner"></div>
-                </div>
-            );
+            return <div className="flex justify-center items-center h-full w-full py-10"><div className="spinner"></div></div>;
         }
 
         // --- Main App ---
         function App() {
             const [currentScreen, setCurrentScreen] = useState('loading'); 
-            const [user, setUser] = useState(null);
+            const [currentUser, setCurrentUser] = useState(null); // Simulated User
+            const [isDbReady, setIsDbReady] = useState(false);
+            
             const [selectedExam, setSelectedExam] = useState(null);
             const [examState, setExamState] = useState({
-                answers: {},
-                currentQuestionIndex: 0,
-                isFinished: false,
-                score: 0,
-                timeRemaining: 0,
-                feedbackMode: false 
+                answers: {}, currentQuestionIndex: 0, isFinished: false, score: 0, timeRemaining: 0, feedbackMode: false 
             });
 
+            // 1. Initialize DB Connection (Anonymous/Custom Token)
             useEffect(() => {
-                const unsubscribe = auth.onAuthStateChanged(async (authUser) => {
-                    if (authUser) {
-                        try {
-                            const userDoc = await db.collection('users').doc(authUser.uid).get();
+                const initAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await auth.signInWithCustomToken(__initial_auth_token);
+                        } else {
+                            await auth.signInAnonymously();
+                        }
+                        setIsDbReady(true);
+                        
+                        // Check local storage for previous login session
+                        const savedUser = localStorage.getItem('theone_user');
+                        if (savedUser) {
+                            const parsedUser = JSON.parse(savedUser);
+                            // Verify user still exists
+                            const userDoc = await getPublicColl('users').doc(parsedUser.id).get();
                             if (userDoc.exists) {
-                                const userData = userDoc.data();
-                                setUser({ uid: authUser.uid, email: authUser.email, ...userData });
-                                if (userData.status === 'pending') setCurrentScreen('pending-approval');
-                                else if (userData.role === 'admin') setCurrentScreen('admin-home');
-                                else setCurrentScreen('home');
+                                setCurrentUser({ id: userDoc.id, ...userDoc.data() });
+                                setCurrentScreen(userDoc.data().role === 'admin' ? 'admin-home' : 'home');
                             } else {
-                                await auth.signOut();
-                                alert('ไม่พบข้อมูลผู้ใช้ในระบบ หรือบัญชีถูกลบ');
+                                localStorage.removeItem('theone_user');
                                 setCurrentScreen('login');
                             }
-                        } catch (error) {
-                            console.error("Auth Error:", error);
+                        } else {
                             setCurrentScreen('login');
                         }
-                    } else {
-                        setUser(null);
+                    } catch (error) {
+                        console.error("Auth Init Error:", error);
+                        setIsDbReady(true); // Allow to proceed to login anyway, might fail later but UI shows
                         setCurrentScreen('login');
                     }
-                });
-                return () => unsubscribe();
+                };
+                initAuth();
             }, []);
 
+            // --- Navigation & Auth Handlers ---
             const navigate = (screen) => {
                 window.scrollTo(0, 0);
                 setCurrentScreen(screen);
             };
 
-            const handleLogout = async () => {
-                await auth.signOut();
+            const handleSimulatedLogin = async (email, password) => {
+                try {
+                    const snapshot = await getPublicColl('users').where('email', '==', email).get();
+                    if (snapshot.empty) throw new Error('ไม่พบอีเมลนี้ในระบบ');
+                    
+                    const userDoc = snapshot.docs[0];
+                    const userData = userDoc.data();
+                    
+                    if (userData.password !== password) throw new Error('รหัสผ่านไม่ถูกต้อง');
+                    
+                    const userObj = { id: userDoc.id, ...userData };
+                    setCurrentUser(userObj);
+                    localStorage.setItem('theone_user', JSON.stringify(userObj));
+                    
+                    if (userData.status === 'pending') setCurrentScreen('pending-approval');
+                    else if (userData.role === 'admin') setCurrentScreen('admin-home');
+                    else setCurrentScreen('home');
+                    
+                    return { success: true };
+                } catch (err) {
+                    return { success: false, message: err.message };
+                }
+            };
+
+            const handleSimulatedRegister = async (name, email, password) => {
+                try {
+                    const snapshot = await getPublicColl('users').where('email', '==', email).get();
+                    if (!snapshot.empty) throw new Error('อีเมลนี้ถูกใช้งานแล้ว');
+                    
+                    const isDemoAdmin = email.toLowerCase().startsWith('admin');
+                    const newUser = {
+                        name, email, password, // Note: In a real app, never store plain text passwords
+                        role: isDemoAdmin ? 'admin' : 'user',
+                        status: isDemoAdmin ? 'active' : 'pending',
+                        createdAt: new Date()
+                    };
+                    
+                    const docRef = await getPublicColl('users').add(newUser);
+                    // Auto login after register
+                    const userObj = { id: docRef.id, ...newUser };
+                    setCurrentUser(userObj);
+                    localStorage.setItem('theone_user', JSON.stringify(userObj));
+                    
+                    if (newUser.status === 'pending') setCurrentScreen('pending-approval');
+                    else if (newUser.role === 'admin') setCurrentScreen('admin-home');
+                    else setCurrentScreen('home');
+
+                    return { success: true };
+                } catch (err) {
+                    return { success: false, message: err.message };
+                }
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('theone_user');
+                setCurrentUser(null);
                 navigate('login');
             };
 
+            // --- Exam Logic ---
             const startExam = (examData) => {
                 setSelectedExam(examData);
                 setExamState({
-                    answers: {},
-                    currentQuestionIndex: 0,
-                    isFinished: false,
-                    score: 0,
-                    timeRemaining: examData.timeLimit || 30 * 60,
-                    feedbackMode: false
+                    answers: {}, currentQuestionIndex: 0, isFinished: false, score: 0,
+                    timeRemaining: examData.timeLimit || 30 * 60, feedbackMode: false
                 });
                 navigate('exam');
             };
@@ -240,11 +288,7 @@
 
             const handleNextQuestion = () => {
                 if (examState.currentQuestionIndex < selectedExam.questions.length - 1) {
-                    setExamState(prev => ({
-                        ...prev,
-                        currentQuestionIndex: prev.currentQuestionIndex + 1,
-                        feedbackMode: false 
-                    }));
+                    setExamState(prev => ({ ...prev, currentQuestionIndex: prev.currentQuestionIndex + 1, feedbackMode: false }));
                 } else {
                     submitExam();
                 }
@@ -252,40 +296,34 @@
 
             const submitExam = () => {
                 if (!selectedExam) return;
-
                 let correctCount = 0;
                 selectedExam.questions.forEach(q => {
                     if (normalizeAnswer(examState.answers[q.id]) === normalizeAnswer(q.correct)) correctCount++;
                 });
                 const scorePercentage = Math.round((correctCount / selectedExam.questions.length) * 100);
                 
-                // Update State and Navigate IMMEDIATELY (Don't wait for DB)
                 setExamState(prev => ({ ...prev, isFinished: true, score: scorePercentage }));
                 navigate('result');
 
-                // Save to DB in background
-                if (user) {
-                    db.collection('exam_results').add({
-                        userId: user.uid,
+                if (currentUser) {
+                    getPublicColl('exam_results').add({
+                        userId: currentUser.id,
+                        userName: currentUser.name,
                         examTitle: selectedExam.title,
                         score: scorePercentage,
                         date: new Date(),
                         status: scorePercentage >= 60 ? 'pass' : 'fail'
-                    }).catch(e => console.error("Error saving exam background:", e));
+                    }).catch(e => console.error("Error saving exam:", e));
                 }
             };
 
+            // Timer
             useEffect(() => {
                 let interval;
                 if (currentScreen === 'exam' && !examState.isFinished && examState.timeRemaining > 0) {
                     interval = setInterval(() => {
                         setExamState(prev => {
-                            if (prev.timeRemaining <= 1) {
-                                clearInterval(interval);
-                                // Don't call submitExam here directly to avoid state closure issues
-                                // Use a flag or separate effect if needed, but for now strict timer end logic:
-                                return { ...prev, timeRemaining: 0, isTimeUp: true }; 
-                            }
+                            if (prev.timeRemaining <= 1) return { ...prev, timeRemaining: 0, isTimeUp: true };
                             return { ...prev, timeRemaining: prev.timeRemaining - 1 };
                         });
                     }, 1000);
@@ -293,71 +331,63 @@
                 return () => clearInterval(interval);
             }, [currentScreen, examState.isFinished]);
 
-            // Watch for Time Up
             useEffect(() => {
-                if (examState.isTimeUp && !examState.isFinished) {
-                    submitExam();
-                }
+                if (examState.isTimeUp && !examState.isFinished) submitExam();
             }, [examState.isTimeUp]);
 
 
-            if (currentScreen === 'loading') return <div className="min-h-screen flex items-center justify-center bg-white"><div className="spinner"></div></div>;
+            if (currentScreen === 'loading' || !isDbReady) return <div className="min-h-screen flex items-center justify-center bg-white"><div className="spinner"></div></div>;
 
             return (
                 <div id="app-container">
-                    {currentScreen === 'login' && <LoginScreen onNavigate={navigate} />}
-                    {currentScreen === 'register' && <RegisterScreen onNavigate={navigate} />}
+                    {currentScreen === 'login' && <LoginScreen onLogin={handleSimulatedLogin} onNavigate={navigate} />}
+                    {currentScreen === 'register' && <RegisterScreen onRegister={handleSimulatedRegister} onNavigate={navigate} />}
                     {currentScreen === 'pending-approval' && <PendingApprovalScreen onLogout={handleLogout} />}
                     
-                    {currentScreen === 'home' && <HomeScreen user={user} onNavigate={navigate} onStartExam={startExam} />}
+                    {currentScreen === 'home' && <HomeScreen user={currentUser} onNavigate={navigate} onStartExam={startExam} />}
                     {currentScreen === 'category' && <CategoryScreen onNavigate={navigate} onStartExam={startExam} />}
-                    {currentScreen === 'summary' && <SummaryScreen user={user} onNavigate={navigate} />}
-                    {currentScreen === 'video' && <VideoScreen user={user} onNavigate={navigate} />}
-                    {currentScreen === 'history' && <HistoryScreen user={user} onNavigate={navigate} />}
-                    {currentScreen === 'profile' && <ProfileScreen user={user} onNavigate={navigate} onLogout={handleLogout} />}
+                    {currentScreen === 'summary' && <SummaryScreen user={currentUser} onNavigate={navigate} />}
+                    {currentScreen === 'video' && <VideoScreen user={currentUser} onNavigate={navigate} />}
+                    {currentScreen === 'history' && <HistoryScreen user={currentUser} onNavigate={navigate} />}
+                    {currentScreen === 'profile' && <ProfileScreen user={currentUser} onNavigate={navigate} onLogout={handleLogout} />}
                     
                     {currentScreen === 'exam' && selectedExam && (
                         <ExamScreen 
-                            examData={selectedExam} 
-                            examState={examState} 
-                            onAnswer={handleAnswer} 
-                            onNext={handleNextQuestion}
-                            onSubmit={submitExam}
-                            onNavigate={navigate}
+                            examData={selectedExam} examState={examState} 
+                            onAnswer={handleAnswer} onNext={handleNextQuestion}
+                            onSubmit={submitExam} onNavigate={navigate}
                         />
                     )}
                     
                     {currentScreen === 'result' && selectedExam && (
                         <ResultScreen 
-                            examState={examState} 
-                            totalQuestions={selectedExam.questions.length}
+                            examState={examState} totalQuestions={selectedExam.questions.length}
                             onNavigate={navigate}
                         />
                     )}
                     
-                    {currentScreen === 'admin-home' && user?.role === 'admin' && <AdminHomeScreen user={user} onNavigate={navigate} onLogout={handleLogout} />}
-                    {currentScreen === 'admin-exams' && user?.role === 'admin' && <AdminExamScreen onNavigate={navigate} />}
-                    {currentScreen === 'admin-users' && user?.role === 'admin' && <AdminUserScreen onNavigate={navigate} currentUser={user} />}
+                    {currentScreen === 'admin-home' && currentUser?.role === 'admin' && <AdminHomeScreen user={currentUser} onNavigate={navigate} onLogout={handleLogout} />}
+                    {currentScreen === 'admin-exams' && currentUser?.role === 'admin' && <AdminExamScreen onNavigate={navigate} />}
+                    {currentScreen === 'admin-users' && currentUser?.role === 'admin' && <AdminUserScreen onNavigate={navigate} currentUser={currentUser} />}
                 </div>
             );
         }
 
         // --- Screen Components ---
 
-        function LoginScreen({ onNavigate }) {
+        function LoginScreen({ onLogin, onNavigate }) {
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
             const [loading, setLoading] = useState(false);
 
-            const handleLogin = async (e) => {
+            const handleSubmit = async (e) => {
                 e.preventDefault();
                 setError('');
                 setLoading(true);
-                try {
-                    await auth.signInWithEmailAndPassword(email, password);
-                } catch (err) {
-                    setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
+                const result = await onLogin(email, password);
+                if (!result.success) {
+                    setError(result.message);
                     setLoading(false);
                 }
             };
@@ -374,7 +404,7 @@
                             <h1 className="text-2xl font-bold text-[#111418]">เข้าสู่ระบบ</h1>
                             <p className="text-slate-500 text-sm mt-2">เตรียมตัวสอบข้าราชการไปกับเรา</p>
                         </div>
-                        <form className="flex flex-col gap-5" onSubmit={handleLogin}>
+                        <form className="flex flex-col gap-5" onSubmit={handleSubmit}>
                             {error && <div className="bg-red-50 text-red-500 text-sm p-3 rounded-xl text-center">{error}</div>}
                             <div className="space-y-1.5">
                                 <label className="text-sm font-medium text-slate-700 ml-1">อีเมล</label>
@@ -409,31 +439,20 @@
             );
         }
 
-        function RegisterScreen({ onNavigate }) {
+        function RegisterScreen({ onRegister, onNavigate }) {
             const [name, setName] = useState('');
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
             const [error, setError] = useState('');
             const [loading, setLoading] = useState(false);
 
-            const handleRegister = async (e) => {
+            const handleSubmit = async (e) => {
                 e.preventDefault();
                 setError('');
                 setLoading(true);
-                try {
-                    const userCredential = await auth.createUserWithEmailAndPassword(email, password);
-                    const user = userCredential.user;
-                    const isDemoAdmin = email.toLowerCase().startsWith('admin');
-                    await db.collection('users').doc(user.uid).set({
-                        name: name,
-                        email: email,
-                        role: isDemoAdmin ? 'admin' : 'user',
-                        status: isDemoAdmin ? 'active' : 'pending',
-                        createdAt: new Date()
-                    });
-                } catch (err) {
-                    console.error(err);
-                    setError(err.message || 'เกิดข้อผิดพลาดในการสมัครสมาชิก');
+                const result = await onRegister(name, email, password);
+                if (!result.success) {
+                    setError(result.message);
                     setLoading(false);
                 }
             };
@@ -452,7 +471,7 @@
                         <h1 className="text-2xl font-bold text-[#111418]">สร้างบัญชีผู้ใช้</h1>
                         <p className="text-slate-500 mt-2 text-center">เริ่มต้นเตรียมสอบข้าราชการไปกับเรา</p>
                     </div>
-                    <form className="px-6 pb-6 flex flex-col gap-4 max-w-md mx-auto w-full" onSubmit={handleRegister}>
+                    <form className="px-6 pb-6 flex flex-col gap-4 max-w-md mx-auto w-full" onSubmit={handleSubmit}>
                         {error && <div className="bg-red-50 text-red-500 text-sm p-3 rounded-xl text-center">{error}</div>}
                         <div className="space-y-1">
                             <label className="text-base font-medium text-[#111418]">ชื่อ-นามสกุล</label>
@@ -498,14 +517,14 @@
             const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
             
             useEffect(() => {
-                const unsubscribeExams = db.collection('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
+                const unsubscribeExams = getPublicColl('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
+                    setExams(data);
                 });
 
                 let unsubscribeStats = () => {};
                 if (user) {
-                    unsubscribeStats = db.collection('exam_results').where('userId', '==', user.uid).onSnapshot(snapshot => {
+                    unsubscribeStats = getPublicColl('exam_results').where('userId', '==', user.id).onSnapshot(snapshot => {
                         if (snapshot.empty) {
                             setUserStats({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
                         } else {
@@ -581,7 +600,7 @@
                                 <button onClick={() => onNavigate('category')} className="text-sm font-medium text-primary">ดูทั้งหมด</button>
                             </div>
                             <div className="flex overflow-x-auto gap-4 pb-4 -mx-4 px-4 hide-scrollbar snap-x md:grid md:grid-cols-2 md:mx-0 md:px-0">
-                                {exams.map((exam, i) => (
+                                {exams.length === 0 ? <div className="text-slate-400 text-sm p-4 w-full text-center">ยังไม่มีข้อสอบ</div> : exams.map((exam, i) => (
                                     <div key={i} className="min-w-[280px] snap-center bg-white rounded-xl overflow-hidden shadow-sm border border-slate-100 flex-shrink-0">
                                         <div className="h-32 bg-slate-200 relative flex items-center justify-center">
                                             <Icon name="history_edu" className="text-slate-300 text-5xl" />
@@ -702,7 +721,7 @@
             const [editingContent, setEditingContent] = useState(null);
 
             useEffect(() => {
-                const unsubscribe = db.collection('videos').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                const unsubscribe = getPublicColl('videos').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
                     setVideos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'video' })));
                     setLoading(false);
                 });
@@ -712,9 +731,9 @@
             const handleSaveContent = async (data) => {
                 try {
                     if (editingContent) {
-                        await db.collection('videos').doc(editingContent.id).update(data);
+                        await getPublicColl('videos').doc(editingContent.id).update(data);
                     } else {
-                        await db.collection('videos').add(data);
+                        await getPublicColl('videos').add(data);
                     }
                     setShowAddModal(false);
                     setEditingContent(null);
@@ -725,7 +744,7 @@
 
             const handleDelete = async (id) => {
                 if (confirm('ต้องการลบวิดีโอนี้?')) {
-                    await db.collection('videos').doc(id).delete();
+                    await getPublicColl('videos').doc(id).delete();
                 }
             };
             
@@ -805,7 +824,7 @@
             const [editingContent, setEditingContent] = useState(null);
 
             useEffect(() => {
-                const unsubscribe = db.collection('summaries').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                const unsubscribe = getPublicColl('summaries').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
                     setSummaries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                     setLoading(false);
                 });
@@ -815,9 +834,9 @@
             const handleSaveContent = async (data) => {
                 try {
                     if (editingContent) {
-                        await db.collection('summaries').doc(editingContent.id).update(data);
+                        await getPublicColl('summaries').doc(editingContent.id).update(data);
                     } else {
-                        await db.collection('summaries').add(data);
+                        await getPublicColl('summaries').add(data);
                     }
                     setShowAddModal(false);
                     setEditingContent(null);
@@ -828,7 +847,7 @@
 
             const handleDelete = async (id) => {
                 if (confirm('ต้องการลบเนื้อหานี้?')) {
-                    await db.collection('summaries').doc(id).delete();
+                    await getPublicColl('summaries').doc(id).delete();
                 }
             };
             
@@ -906,7 +925,7 @@
             const [activeTab, setActiveTab] = useState('part_a'); // part_a, part_b
 
             useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                const unsubscribe = getPublicColl('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
                     setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                     setLoading(false);
                 });
@@ -981,11 +1000,11 @@
             const [loading, setLoading] = useState(true);
 
             useEffect(() => {
-                if (!user) return;
+                if (!user) { setLoading(false); return; }
                 const fetchHistory = async () => {
                     try {
-                        const snapshot = await db.collection('exam_results')
-                            .where('userId', '==', user.uid)
+                        const snapshot = await getPublicColl('exam_results')
+                            .where('userId', '==', user.id)
                             .orderBy('date', 'desc')
                             .get();
                         const data = snapshot.docs.map(doc => {
@@ -1182,6 +1201,32 @@
                 </div>
             );
         }
+        
+        function ResultScreen({ examState, totalQuestions, onNavigate }) {
+            return (
+                <div className="flex flex-col min-h-screen bg-white items-center justify-center p-6 text-center">
+                    <div className="w-32 h-32 rounded-full bg-slate-100 flex items-center justify-center mb-6 relative">
+                        <div className="absolute inset-0 rounded-full border-4 border-slate-200"></div>
+                        <div className="absolute inset-0 rounded-full border-4 border-primary border-t-transparent animate-spin" style={{ animationDuration: '0s', transform: `rotate(${examState.score * 3.6}deg)` }}></div>
+                        <div className="flex flex-col">
+                            <span className="text-3xl font-bold text-primary">{examState.score}%</span>
+                            <span className="text-xs text-slate-500">คะแนน</span>
+                        </div>
+                    </div>
+                    <h2 className="text-2xl font-bold text-[#111418] mb-2">
+                        {examState.score >= 60 ? 'ผ่านเกณฑ์!' : 'พยายามอีกนิด!'}
+                    </h2>
+                    <p className="text-slate-500 mb-8">
+                        คุณทำได้ {Math.round((examState.score / 100) * totalQuestions)} จาก {totalQuestions} ข้อ
+                    </p>
+                    <div className="flex flex-col gap-3 w-full max-w-xs">
+                        <button onClick={() => onNavigate('home')} className="w-full py-3 bg-primary text-white rounded-xl font-bold hover:bg-blue-600 transition-colors">
+                            กลับหน้าหลัก
+                        </button>
+                    </div>
+                </div>
+            );
+        }
 
         function QuestionEditorModal({ question, onClose, onSave }) {
             // Initialize state with default or existing question, use key to reset
@@ -1270,13 +1315,13 @@
                 let unsubscribe;
 
                 if (activeTab === 'exams') {
-                    unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                    unsubscribe = getPublicColl('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
                         setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                         setLoading(false);
                     });
                 } else {
                     const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
-                    unsubscribe = db.collection(collectionName).orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
+                    unsubscribe = getPublicColl(collectionName).orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
                         setContentItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                         setLoading(false);
                     });
@@ -1288,7 +1333,7 @@
             // --- Handlers for Exams ---
             const handleDeleteExam = async (id) => {
                 if(confirm('คุณต้องการลบชุดข้อสอบนี้ใช่หรือไม่?')) {
-                    try { await db.collection('exams').doc(id).delete(); } catch (e) { alert('เกิดข้อผิดพลาดในการลบ'); }
+                    try { await getPublicColl('exams').doc(id).delete(); } catch (e) { alert('เกิดข้อผิดพลาดในการลบ'); }
                 }
             };
             const handleEditExam = (exam) => { 
@@ -1350,8 +1395,8 @@
                         subject: editorData.category === 'part_a' ? "ความรู้ทั่วไป" : "วิชาเฉพาะ",
                         createdAt: editorData.createdAt || new Date()
                     };
-                    if (editorData.id) await db.collection('exams').doc(editorData.id).update(dataToSave);
-                    else await db.collection('exams').add(dataToSave);
+                    if (editorData.id) await getPublicColl('exams').doc(editorData.id).update(dataToSave);
+                    else await getPublicColl('exams').add(dataToSave);
                     alert('บันทึกสำเร็จ');
                     setViewMode('list');
                 } catch (e) { console.error(e); alert('บันทึกไม่สำเร็จ'); }
@@ -1383,9 +1428,9 @@
                 const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
                 try {
                     if (editingContent) {
-                        await db.collection(collectionName).doc(editingContent.id).update(data);
+                        await getPublicColl(collectionName).doc(editingContent.id).update(data);
                     } else {
-                        await db.collection(collectionName).add(data);
+                        await getPublicColl(collectionName).add(data);
                     }
                     setShowContentModal(false);
                     setEditingContent(null);
@@ -1397,7 +1442,7 @@
             const handleDeleteContent = async (id) => {
                 const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
                 if (confirm('ต้องการลบรายการนี้?')) {
-                    await db.collection(collectionName).doc(id).delete();
+                    await getPublicColl(collectionName).doc(id).delete();
                 }
             };
 
@@ -1600,7 +1645,7 @@
             const [tab, setTab] = useState('pending');
 
             useEffect(() => {
-                const unsubscribe = db.collection('users').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+                const unsubscribe = getPublicColl('users').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
                     setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
                     setLoading(false);
                 });
@@ -1608,12 +1653,12 @@
             }, []);
 
             const approveUser = async (userId) => {
-                try { await db.collection('users').doc(userId).update({ status: 'active' }); } catch (error) { alert("เกิดข้อผิดพลาดในการอนุมัติ"); }
+                try { await getPublicColl('users').doc(userId).update({ status: 'active' }); } catch (error) { alert("เกิดข้อผิดพลาดในการอนุมัติ"); }
             };
 
             const deleteUser = async (userId) => {
                 if (confirm('คุณต้องการลบผู้ใช้นี้ออกจากระบบใช่หรือไม่?')) {
-                    try { await db.collection('users').doc(userId).delete(); } catch (error) { alert("เกิดข้อผิดพลาดในการลบ"); }
+                    try { await getPublicColl('users').doc(userId).delete(); } catch (error) { alert("เกิดข้อผิดพลาดในการลบ"); }
                 }
             };
 
@@ -1677,4 +1722,3 @@
     </script>
 </body>
 </html>
-
