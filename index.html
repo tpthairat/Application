@@ -498,9 +498,19 @@
             const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
             
             useEffect(() => {
-                const unsubscribeExams = db.collection('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
+                // FIXED: Removed orderBy and limit to ensure data shows up even without index
+                const unsubscribeExams = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
+                    // Client-side sort by createdAt descending
+                    data.sort((a, b) => {
+                         const timeA = a.createdAt?.seconds || 0;
+                         const timeB = b.createdAt?.seconds || 0;
+                         return timeB - timeA;
+                    });
+                    setExams(data.length ? data.slice(0, 5) : [INITIAL_MOCK_EXAM]); 
+                }, error => {
+                    console.error("Error fetching exams:", error);
+                    // Handle error gracefully by showing mock data or alert
                 });
 
                 let unsubscribeStats = () => {};
@@ -906,9 +916,19 @@
             const [activeTab, setActiveTab] = useState('part_a'); // part_a, part_b
 
             useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                    setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                // FIXED: Removed orderBy and limit to ensure data shows up even without index
+                const unsubscribe = db.collection('exams').onSnapshot(snapshot => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                     // Client-side sort by createdAt descending
+                     data.sort((a, b) => {
+                         const timeA = a.createdAt?.seconds || 0;
+                         const timeB = b.createdAt?.seconds || 0;
+                         return timeB - timeA;
+                    });
+                    setExams(data.length ? data : []);
                     setLoading(false);
+                }, error => {
+                    console.error("Error fetching exams:", error);
                 });
                 return () => unsubscribe();
             }, []);
@@ -1270,8 +1290,19 @@
                 let unsubscribe;
 
                 if (activeTab === 'exams') {
-                    unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                        setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    // FIXED: Removed orderBy and limit to ensure data shows up even without index
+                    unsubscribe = db.collection('exams').onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        // Client-side sort
+                         data.sort((a, b) => {
+                             const timeA = a.createdAt?.seconds || 0;
+                             const timeB = b.createdAt?.seconds || 0;
+                             return timeB - timeA;
+                        });
+                        setExams(data);
+                        setLoading(false);
+                    }, error => {
+                        console.error("Error fetching exams:", error);
                         setLoading(false);
                     });
                 } else {
