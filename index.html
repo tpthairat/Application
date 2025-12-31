@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TheONE สอบราชการ</title>
+    <title>Civil Service Exam Prep (Fixed Bugs)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -41,9 +41,6 @@
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
-
-    <!-- PapaParse for CSV Parsing -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
     <style>
         body { font-family: 'Public Sans', 'Noto Sans Thai', sans-serif; background-color: #f3f4f6; }
@@ -254,6 +251,8 @@
             };
 
             const submitExam = async () => {
+                if (!selectedExam) return; // Prevent crashes if selectedExam is missing
+
                 let correctCount = 0;
                 selectedExam.questions.forEach(q => {
                     if (normalizeAnswer(examState.answers[q.id]) === normalizeAnswer(q.correct)) correctCount++;
@@ -272,6 +271,8 @@
                     } catch (e) { console.error("Error saving exam:", e); }
                 }
 
+                // IMPORTANT: Ensure state is updated BEFORE navigation or passed directly via state manager if needed.
+                // Here we update examState and then switch screen.
                 setExamState(prev => ({ ...prev, isFinished: true, score: scorePercentage }));
                 navigate('result');
             };
@@ -283,7 +284,7 @@
                         setExamState(prev => {
                             if (prev.timeRemaining <= 1) {
                                 clearInterval(interval);
-                                submitExam();
+                                submitExam(); // Auto-submit when time up
                                 return { ...prev, timeRemaining: 0 };
                             }
                             return { ...prev, timeRemaining: prev.timeRemaining - 1 };
@@ -691,6 +692,7 @@
             const [loading, setLoading] = useState(true);
             const [showAddModal, setShowAddModal] = useState(false);
             const [viewingContent, setViewingContent] = useState(null);
+            const [editingContent, setEditingContent] = useState(null);
 
             useEffect(() => {
                 const unsubscribe = db.collection('videos').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
@@ -702,8 +704,13 @@
 
             const handleSaveContent = async (data) => {
                 try {
-                    await db.collection('videos').add(data);
+                    if (editingContent) {
+                        await db.collection('videos').doc(editingContent.id).update(data);
+                    } else {
+                        await db.collection('videos').add(data);
+                    }
                     setShowAddModal(false);
+                    setEditingContent(null);
                 } catch (error) {
                     alert('เกิดข้อผิดพลาดในการบันทึก');
                 }
@@ -714,6 +721,11 @@
                     await db.collection('videos').doc(id).delete();
                 }
             };
+            
+             const handleEdit = (item) => {
+                setEditingContent(item);
+                setShowAddModal(true);
+            };
 
             return (
                 <div className="flex flex-col min-h-screen bg-[#f6f7f8] pb-24">
@@ -723,7 +735,7 @@
                             <h2 className="text-lg font-bold text-[#111418]">วิดีโอสรุป</h2>
                         </div>
                         {user.role === 'admin' && (
-                            <button onClick={() => setShowAddModal(true)} className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow-sm hover:bg-red-700">
+                            <button onClick={() => { setEditingContent(null); setShowAddModal(true); }} className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow-sm hover:bg-red-700">
                                 <Icon name="add" className="text-base" /> เพิ่มวิดีโอ
                             </button>
                         )}
@@ -752,9 +764,14 @@
                                             <div className="p-3 flex justify-between items-start gap-2">
                                                 <h4 className="font-bold text-[#111418] text-sm line-clamp-2">{item.title}</h4>
                                                 {user.role === 'admin' && (
-                                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="text-slate-300 hover:text-red-500">
-                                                        <Icon name="delete" className="text-sm" />
-                                                    </button>
+                                                    <div className="flex gap-1">
+                                                         <button onClick={(e) => { e.stopPropagation(); handleEdit(item); }} className="text-slate-300 hover:text-primary">
+                                                            <Icon name="edit" className="text-sm" />
+                                                        </button>
+                                                        <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="text-slate-300 hover:text-red-500">
+                                                            <Icon name="delete" className="text-sm" />
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
@@ -764,7 +781,7 @@
                         )}
                     </div>
                     
-                    {showAddModal && <AddContentModal onClose={() => setShowAddModal(false)} onSave={handleSaveContent} defaultType="video" />}
+                    {showAddModal && <AddContentModal onClose={() => setShowAddModal(false)} onSave={handleSaveContent} defaultType="video" initialData={editingContent} />}
                     {viewingContent && <ContentReaderModal content={viewingContent} onClose={() => setViewingContent(null)} />}
                     
                     <BottomNav active="video" onNavigate={onNavigate} />
@@ -778,6 +795,7 @@
             const [loading, setLoading] = useState(true);
             const [showAddModal, setShowAddModal] = useState(false);
             const [viewingContent, setViewingContent] = useState(null);
+            const [editingContent, setEditingContent] = useState(null);
 
             useEffect(() => {
                 const unsubscribe = db.collection('summaries').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
@@ -789,8 +807,13 @@
 
             const handleSaveContent = async (data) => {
                 try {
-                    await db.collection('summaries').add(data);
+                    if (editingContent) {
+                        await db.collection('summaries').doc(editingContent.id).update(data);
+                    } else {
+                        await db.collection('summaries').add(data);
+                    }
                     setShowAddModal(false);
+                    setEditingContent(null);
                 } catch (error) {
                     alert('เกิดข้อผิดพลาดในการบันทึก');
                 }
@@ -801,6 +824,11 @@
                     await db.collection('summaries').doc(id).delete();
                 }
             };
+            
+             const handleEdit = (item) => {
+                setEditingContent(item);
+                setShowAddModal(true);
+            };
 
             return (
                 <div className="flex flex-col min-h-screen bg-[#f6f7f8] pb-24">
@@ -810,7 +838,7 @@
                             <h2 className="text-lg font-bold text-[#111418]">สรุปเนื้อหา</h2>
                         </div>
                         {user.role === 'admin' && (
-                            <button onClick={() => setShowAddModal(true)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow-sm hover:bg-green-700">
+                            <button onClick={() => { setEditingContent(null); setShowAddModal(true); }} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow-sm hover:bg-green-700">
                                 <Icon name="add" className="text-base" /> เพิ่มเนื้อหา
                             </button>
                         )}
@@ -841,9 +869,14 @@
                                         <div className="flex items-center gap-2">
                                             <Icon name="visibility" className="text-slate-300" />
                                             {user.role === 'admin' && (
-                                                <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
-                                                    <Icon name="delete" />
-                                                </button>
+                                                <>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleEdit(item); }} className="p-2 text-slate-300 hover:text-primary hover:bg-blue-50 rounded-full transition-colors">
+                                                        <Icon name="edit" />
+                                                    </button>
+                                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors">
+                                                        <Icon name="delete" />
+                                                    </button>
+                                                </>
                                             )}
                                         </div>
                                     </div>
@@ -852,7 +885,7 @@
                         )}
                     </div>
                     
-                    {showAddModal && <AddContentModal onClose={() => setShowAddModal(false)} onSave={handleSaveContent} />}
+                    {showAddModal && <AddContentModal onClose={() => setShowAddModal(false)} onSave={handleSaveContent} initialData={editingContent} />}
                     {viewingContent && <ContentReaderModal content={viewingContent} onClose={() => setViewingContent(null)} />}
                     
                     <BottomNav active="summary" onNavigate={onNavigate} />
@@ -1039,6 +1072,7 @@
                         <h2 className="font-bold text-lg text-[#111418] truncate pr-2 max-w-[200px]">{examData.title}</h2>
                         <div className="w-6"></div>
                     </header>
+                    
                     <div className="flex-none px-4 py-3 bg-white shadow-sm z-10">
                         <div className="flex justify-between items-center mb-2 max-w-2xl mx-auto w-full">
                             <div className="flex items-center gap-2 text-primary">
@@ -1053,6 +1087,7 @@
                             </div>
                         </div>
                     </div>
+
                     <main className="flex-1 overflow-y-auto p-4 pb-20">
                         <div className="flex flex-col gap-4 max-w-2xl mx-auto w-full">
                             <h2 className="text-xl font-bold text-[#111418] leading-snug">{currentQ.question}</h2>
@@ -1087,36 +1122,125 @@
                                                 {hasAnswered && isSelected && !isCorrectOption && <Icon name="close" className="text-sm font-bold text-white" />}
                                                 {!hasAnswered && isSelected && <div className="w-2.5 h-2.5 rounded-full bg-primary" />}
                                             </div>
-                                            <input type="radio" name={`q-${currentQ.id}`} className="hidden" onChange={() => onAnswer(currentQ.id, opt.id)} checked={isSelected} disabled={hasAnswered} />
-                                            <span className={`text-base font-medium ${hasAnswered && isCorrectOption ? 'text-green-700 font-bold' : hasAnswered && isSelected ? 'text-red-700' : 'text-[#111418]'}`}>{opt.text}</span>
+                                            <input 
+                                                type="radio" 
+                                                name={`q-${currentQ.id}`} 
+                                                className="hidden" 
+                                                onChange={() => onAnswer(currentQ.id, opt.id)} 
+                                                checked={isSelected}
+                                                disabled={hasAnswered} 
+                                            />
+                                            <span className={`text-base font-medium ${hasAnswered && isCorrectOption ? 'text-green-700 font-bold' : hasAnswered && isSelected ? 'text-red-700' : 'text-[#111418]'}`}>
+                                                {opt.text}
+                                            </span>
                                         </label>
                                     );
                                 })}
                             </div>
+
+                            {/* Feedback Section */}
                             {hasAnswered && (
                                 <div id="feedback-section" className={`mt-4 p-4 rounded-xl border ${isCorrect ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'} animate-fade-in`}>
                                     <div className="flex items-center gap-2 mb-2">
                                         <div className={`w-8 h-8 rounded-full flex items-center justify-center ${isCorrect ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                                             <Icon name={isCorrect ? "check" : "close"} />
                                         </div>
-                                        <h3 className={`font-bold text-lg ${isCorrect ? 'text-green-700' : 'text-red-700'}`}>{isCorrect ? "ถูกต้อง!" : "ยังไม่ถูกนะ"}</h3>
+                                        <h3 className={`font-bold text-lg ${isCorrect ? 'text-green-700' : 'text-red-700'}`}>
+                                            {isCorrect ? "ถูกต้อง!" : "ยังไม่ถูกนะ"}
+                                        </h3>
                                     </div>
-                                    <p className="text-[#111418] text-sm leading-relaxed"><span className="font-bold">คำอธิบาย:</span> {currentQ.explanation || "ไม่มีคำอธิบายเพิ่มเติม"}</p>
+                                    <p className="text-[#111418] text-sm leading-relaxed">
+                                        <span className="font-bold">คำอธิบาย:</span> {currentQ.explanation || "ไม่มีคำอธิบายเพิ่มเติม"}
+                                    </p>
                                 </div>
                             )}
                         </div>
                     </main>
+
                     <footer className="flex-none p-4 border-t border-slate-100 bg-white pb-safe">
                         <div className="max-w-2xl mx-auto w-full">
                             {hasAnswered ? (
-                                <button onClick={onNext} className="w-full h-12 rounded-xl bg-primary text-white font-bold hover:bg-blue-600 shadow-lg flex items-center justify-center gap-2 animate-bounce-short">
-                                    {examState.currentQuestionIndex === examData.questions.length - 1 ? 'ดูผลสอบ' : 'ข้อถัดไป'} <Icon name="arrow_forward" />
+                                <button 
+                                    onClick={onNext}
+                                    className="w-full h-12 rounded-xl bg-primary text-white font-bold hover:bg-blue-600 shadow-lg flex items-center justify-center gap-2 animate-bounce-short"
+                                >
+                                    {examState.currentQuestionIndex === examData.questions.length - 1 ? 'ดูผลสอบ' : 'ข้อถัดไป'} 
+                                    <Icon name="arrow_forward" />
                                 </button>
                             ) : (
                                 <div className="text-center text-slate-400 text-sm">เลือกคำตอบเพื่อตรวจสอบ</div>
                             )}
                         </div>
                     </footer>
+                </div>
+            );
+        }
+
+        function QuestionEditorModal({ question, onClose, onSave }) {
+            // FIX: Initialize state only once, but update it when 'question' prop changes
+            const [data, setData] = useState({
+                question: '',
+                options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}],
+                correct: 'A',
+                explanation: ''
+            });
+
+            // Effect to sync state with props when modal opens or question changes
+            useEffect(() => {
+                if (question) {
+                    setData({...question});
+                } else {
+                    // Reset for new question
+                    setData({
+                        question: '',
+                        options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}],
+                        correct: 'A',
+                        explanation: ''
+                    });
+                }
+            }, [question]);
+
+            const handleOptionChange = (idx, val) => {
+                // FIX: Avoid mutation of state objects
+                const newOpts = data.options.map((opt, i) => {
+                    if (i === idx) return { ...opt, text: val };
+                    return opt;
+                });
+                setData({...data, options: newOpts});
+            };
+
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="bg-white w-full max-w-lg mx-4 rounded-xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-bold text-lg">{question ? 'แก้ไขข้อสอบ' : 'เพิ่มข้อสอบใหม่'}</h3>
+                            <button onClick={onClose}><Icon name="close" /></button>
+                        </div>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-sm font-medium">โจทย์</label>
+                                <textarea className="w-full border p-2 rounded-lg" rows="3" value={data.question} onChange={e => setData({...data, question: e.target.value})}></textarea>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium">ตัวเลือก</label>
+                                {data.options.map((opt, i) => (
+                                    <div key={i} className="flex gap-2 items-center mt-1">
+                                        <span className="w-6 text-center font-bold">{opt.id}</span>
+                                        <input className="flex-1 border p-2 rounded-lg" value={opt.text} onChange={e => handleOptionChange(i, e.target.value)} />
+                                        <input type="radio" name="correct" checked={data.correct === opt.id} onChange={() => setData({...data, correct: opt.id})} className="w-4 h-4" />
+                                    </div>
+                                ))}
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium">คำอธิบายเฉลย</label>
+                                <textarea className="w-full border p-2 rounded-lg" rows="2" value={data.explanation} onChange={e => setData({...data, explanation: e.target.value})}></textarea>
+                            </div>
+                        </div>
+                        <div className="mt-6 flex gap-2">
+                            <button onClick={() => onSave(data)} className="flex-1 bg-primary text-white py-2 rounded-lg font-bold">บันทึก</button>
+                            <button onClick={onClose} className="flex-1 bg-slate-100 text-slate-600 py-2 rounded-lg font-bold">ยกเลิก</button>
+                        </div>
+                    </div>
                 </div>
             );
         }
@@ -1545,4 +1669,3 @@
     </script>
 </body>
 </html>
-
