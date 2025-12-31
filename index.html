@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TheONE สอบราชการ</title>
+    <title>Civil Service Exam Prep (v2.0)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -108,9 +108,8 @@
 
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
-            firebase.firestore().enablePersistence().catch(err => {
-                console.log('Persistence disabled or error:', err.code);
-            });
+            // DISABLED PERSISTENCE TO FIX CACHING ISSUES
+            // firebase.firestore().enablePersistence()... 
         }
         const auth = firebase.auth();
         const db = firebase.firestore();
@@ -259,7 +258,7 @@
                 });
                 const scorePercentage = Math.round((correctCount / selectedExam.questions.length) * 100);
                 
-                // Update State and Navigate IMMEDIATELY (Don't wait for DB)
+                // Update State and Navigate IMMEDIATELY
                 setExamState(prev => ({ ...prev, isFinished: true, score: scorePercentage }));
                 navigate('result');
 
@@ -271,7 +270,7 @@
                         score: scorePercentage,
                         date: new Date(),
                         status: scorePercentage >= 60 ? 'pass' : 'fail'
-                    }).catch(e => console.error("Error saving exam background:", e));
+                    }).catch(e => console.error("Error saving exam:", e));
                 }
             };
 
@@ -282,8 +281,7 @@
                         setExamState(prev => {
                             if (prev.timeRemaining <= 1) {
                                 clearInterval(interval);
-                                // Don't call submitExam here directly to avoid state closure issues
-                                // Use a flag or separate effect if needed, but for now strict timer end logic:
+                                // Trigger submission in useEffect or via a flag
                                 return { ...prev, timeRemaining: 0, isTimeUp: true }; 
                             }
                             return { ...prev, timeRemaining: prev.timeRemaining - 1 };
@@ -293,13 +291,12 @@
                 return () => clearInterval(interval);
             }, [currentScreen, examState.isFinished]);
 
-            // Watch for Time Up
+             // Watch for Time Up
             useEffect(() => {
                 if (examState.isTimeUp && !examState.isFinished) {
                     submitExam();
                 }
             }, [examState.isTimeUp]);
-
 
             if (currentScreen === 'loading') return <div className="min-h-screen flex items-center justify-center bg-white"><div className="spinner"></div></div>;
 
@@ -403,6 +400,7 @@
                                 ยังไม่มีบัญชีสมาชิก?
                                 <button onClick={() => onNavigate('register')} className="font-bold text-primary hover:text-blue-600 transition-colors ml-1">สมัครสมาชิก</button>
                             </p>
+                            <span className="text-xs text-slate-400">v2.0 (Latest)</span>
                         </div>
                     </div>
                 </div>
@@ -1184,7 +1182,7 @@
         }
 
         function QuestionEditorModal({ question, onClose, onSave }) {
-            // Initialize state with default or existing question, use key to reset
+            // FIX: Initialize state only once, but update it when 'question' prop changes
             const [data, setData] = useState({
                 question: '',
                 options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}],
@@ -1677,4 +1675,3 @@
     </script>
 </body>
 </html>
-
