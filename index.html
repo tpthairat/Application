@@ -498,10 +498,10 @@
             const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
             
             useEffect(() => {
-                // FIXED: Removed orderBy and limit to ensure data shows up even without index
+                // Remove orderBy to prevent missing index issues
                 const unsubscribeExams = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    // Client-side sort by createdAt descending
+                    // Client-side sort
                     data.sort((a, b) => {
                          const timeA = a.createdAt?.seconds || 0;
                          const timeB = b.createdAt?.seconds || 0;
@@ -510,7 +510,6 @@
                     setExams(data.length ? data.slice(0, 5) : [INITIAL_MOCK_EXAM]); 
                 }, error => {
                     console.error("Error fetching exams:", error);
-                    // Handle error gracefully by showing mock data or alert
                 });
 
                 let unsubscribeStats = () => {};
@@ -712,10 +711,18 @@
             const [editingContent, setEditingContent] = useState(null);
 
             useEffect(() => {
-                const unsubscribe = db.collection('videos').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                    setVideos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'video' })));
+                // Remove orderBy to prevent missing index issues
+                const unsubscribe = db.collection('videos').onSnapshot(snapshot => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'video' }));
+                    // Client-side sort
+                    data.sort((a, b) => {
+                         const timeA = a.createdAt?.seconds || 0;
+                         const timeB = b.createdAt?.seconds || 0;
+                         return timeB - timeA;
+                    });
+                    setVideos(data);
                     setLoading(false);
-                });
+                }, error => { console.error(error); setLoading(false); });
                 return () => unsubscribe();
             }, []);
 
@@ -815,10 +822,18 @@
             const [editingContent, setEditingContent] = useState(null);
 
             useEffect(() => {
-                const unsubscribe = db.collection('summaries').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                    setSummaries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                // Remove orderBy to prevent missing index issues
+                const unsubscribe = db.collection('summaries').onSnapshot(snapshot => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // Client-side sort
+                    data.sort((a, b) => {
+                         const timeA = a.createdAt?.seconds || 0;
+                         const timeB = b.createdAt?.seconds || 0;
+                         return timeB - timeA;
+                    });
+                    setSummaries(data);
                     setLoading(false);
-                });
+                }, error => { console.error(error); setLoading(false); });
                 return () => unsubscribe();
             }, []);
 
@@ -916,7 +931,7 @@
             const [activeTab, setActiveTab] = useState('part_a'); // part_a, part_b
 
             useEffect(() => {
-                // FIXED: Removed orderBy and limit to ensure data shows up even without index
+                // Remove orderBy to prevent missing index issues
                 const unsubscribe = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                      // Client-side sort by createdAt descending
@@ -1290,7 +1305,7 @@
                 let unsubscribe;
 
                 if (activeTab === 'exams') {
-                    // FIXED: Removed orderBy and limit to ensure data shows up even without index
+                    // Removed orderBy and limit to ensure data shows up even without index
                     unsubscribe = db.collection('exams').onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                         // Client-side sort
@@ -1307,8 +1322,16 @@
                     });
                 } else {
                     const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
-                    unsubscribe = db.collection(collectionName).orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                        setContentItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    // Remove orderBy for consistent behavior
+                    unsubscribe = db.collection(collectionName).onSnapshot(snapshot => {
+                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                        // Client-side sort
+                         data.sort((a, b) => {
+                             const timeA = a.createdAt?.seconds || 0;
+                             const timeB = b.createdAt?.seconds || 0;
+                             return timeB - timeA;
+                        });
+                        setContentItems(data);
                         setLoading(false);
                     });
                 }
