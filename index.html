@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Civil Service Exam Prep (Fixed Storage)</title>
+    <title>Civil Service Exam Prep (Fixed Syntax)</title>
     
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;700&family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -138,7 +138,6 @@
         const db = firebase.firestore();
 
         // --- Helper: Get Collection Reference (CRITICAL FIX) ---
-        // This function ensures we write to the correct path allowed by security rules
         const getCollection = (collectionName) => {
             return db.collection('artifacts').doc(appId).collection('public').doc('data').collection(collectionName);
         };
@@ -163,8 +162,54 @@
             return id ? `https://img.youtube.com/vi/${id}/mqdefault.jpg` : null;
         };
 
+        // --- Utility: CSV Parser (Robust) ---
+        const parseCSV = (text) => {
+            const rows = [];
+            let currentRow = [];
+            let currentCell = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < text.length; i++) {
+                const char = text[i];
+                const nextChar = text[i + 1];
+                
+                if (inQuotes) {
+                    if (char === '"' && nextChar === '"') {
+                        currentCell += '"';
+                        i++;
+                    } else if (char === '"') {
+                        inQuotes = false;
+                    } else {
+                        currentCell += char;
+                    }
+                } else {
+                    if (char === '"') {
+                        inQuotes = true;
+                    } else if (char === ',') {
+                        currentRow.push(currentCell.trim());
+                        currentCell = '';
+                    } else if (char === '\n' || char === '\r') {
+                        if (currentCell || currentRow.length > 0) {
+                            currentRow.push(currentCell.trim());
+                            rows.push(currentRow);
+                        }
+                        currentRow = [];
+                        currentCell = '';
+                        if (char === '\r' && nextChar === '\n') i++;
+                    } else {
+                        currentCell += char;
+                    }
+                }
+            }
+            if (currentCell || currentRow.length > 0) {
+                currentRow.push(currentCell.trim());
+                rows.push(currentRow);
+            }
+            return rows;
+        };
+
         // --- Mock Data for Seeding ---
-        const MOCK_EXAM = {
+        const INITIAL_MOCK_EXAM = {
             title: "แนวข้อสอบ ก.พ. ภาค ก. (ตัวอย่าง)",
             subject: "วิชากฎหมายและระเบียบข้าราชการ",
             timeLimit: 30 * 60,
@@ -340,7 +385,6 @@
         }
 
         // --- Components ---
-        // (Login, Register, Pending - Same logic, using auth)
          function LoginScreen({ onNavigate, showToast }) {
             const [email, setEmail] = useState('');
             const [password, setPassword] = useState('');
@@ -450,15 +494,35 @@
 
         // --- Admin Screens ---
         function AdminExamScreen({ onNavigate, showToast }) {
-            const [exams, setExams] = useState([]);
+            const [activeTab, setActiveTab] = useState('exams');
             const [viewMode, setViewMode] = useState('list');
+            const [exams, setExams] = useState([]);
+            const [contentItems, setContentItems] = useState([]);
             const [editorData, setEditorData] = useState({ id: null, title: '', questions: [], category: 'part_a', timeLimit: 60 });
-            
+            const [isUploading, setIsUploading] = useState(false);
+            const [editingQuestionIndex, setEditingQuestionIndex] = useState(null);
+            const [showQuestionModal, setShowQuestionModal] = useState(false);
+            const [editingContent, setEditingContent] = useState(null);
+            const [showContentModal, setShowContentModal] = useState(false);
+            const [loading, setLoading] = useState(true);
+
             useEffect(() => {
-                return getCollection('exams').orderBy('createdAt', 'desc').onSnapshot(s => {
-                    setExams(s.docs.map(d => ({id:d.id, ...d.data()})));
-                });
-            }, []);
+                setLoading(true);
+                let unsubscribe;
+                if (activeTab === 'exams') {
+                    unsubscribe = getCollection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(s => {
+                        setExams(s.docs.map(d => ({id:d.id, ...d.data()})));
+                        setLoading(false);
+                    });
+                } else {
+                    const col = activeTab === 'videos' ? 'videos' : 'summaries';
+                    unsubscribe = getCollection(col).orderBy('createdAt', 'desc').limit(20).onSnapshot(s => {
+                        setContentItems(s.docs.map(d => ({id:d.id, ...d.data()})));
+                        setLoading(false);
+                    });
+                }
+                return () => unsubscribe && unsubscribe();
+            }, [activeTab]);
 
             const seedData = async () => {
                 await getCollection('exams').add({ ...INITIAL_MOCK_EXAM, createdAt: new Date() });
@@ -477,27 +541,109 @@
                  setViewMode('list');
             };
 
+            const handleFileUpload = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                setIsUploading(true);
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const text = e.target.result;
+                    const rows = parseCSV(text);
+                    const newQuestions = [];
+                    for (let row of rows) {
+                        if (row.length < 6) continue;
+                        if (row[0].includes('question') || row[0].includes('โจทย์')) continue;
+                        newQuestions.push({
+                            question: row[0],
+                            options: [ { id: 'A', text: row[1]||"" }, { id: 'B', text: row[2]||"" }, { id: 'C', text: row[3]||"" }, { id: 'D', text: row[4]||"" } ],
+                            correct: normalizeAnswer(row[5]), explanation: row[6]||"", id: Date.now() + Math.random()
+                        });
+                    }
+                    if (newQuestions.length > 0) {
+                        const newExam = { title: `ชุดข้อสอบนำเข้า ${new Date().toLocaleString('th-TH')}`, questions: newQuestions, category: 'part_a', subject: "ความรู้ทั่วไป", timeLimit: newQuestions.length * 60, createdAt: new Date() };
+                        await getCollection('exams').add(newExam);
+                        showToast(`นำเข้าสำเร็จ ${newQuestions.length} ข้อ!`);
+                    } else { alert("ไม่พบข้อมูลที่ถูกต้อง"); }
+                    setIsUploading(false); event.target.value = null;
+                };
+                reader.readAsText(file);
+            };
+
+            const handleSaveQuestion = (qData) => {
+                const normalizedQData = { ...qData, correct: normalizeAnswer(qData.correct) };
+                const newQuestions = [...editorData.questions];
+                if (editingQuestionIndex !== null) newQuestions[editingQuestionIndex] = normalizedQData;
+                else newQuestions.push({ ...normalizedQData, id: Date.now() + Math.random() });
+                setEditorData({ ...editorData, questions: newQuestions });
+                setShowQuestionModal(false);
+            };
+
+            const handleDeleteQuestion = (idx) => {
+                if (confirm('ลบข้อนี้?')) {
+                    const newQuestions = editorData.questions.filter((_, i) => i !== idx);
+                    setEditorData({ ...editorData, questions: newQuestions });
+                }
+            };
+            
+            const handleSaveContent = async (data) => {
+                const col = activeTab === 'videos' ? 'videos' : 'summaries';
+                if (editingContent) await getCollection(col).doc(editingContent.id).update(data);
+                else await getCollection(col).add(data);
+                setShowContentModal(false); setEditingContent(null); showToast('บันทึกเรียบร้อย');
+            };
+
+            const handleDeleteContent = async (id) => {
+                 const col = activeTab === 'videos' ? 'videos' : 'summaries';
+                 if (confirm('ลบรายการนี้?')) await getCollection(col).doc(id).delete();
+            };
+
             if (viewMode === 'list') {
                 return (
                     <div className="pb-24 bg-[#f6f7f8] min-h-screen">
-                        <div className="sticky top-0 z-20 bg-white p-4 shadow-sm flex justify-between">
-                            <h2 className="font-bold">จัดการข้อสอบ</h2>
-                            <div className="flex gap-2">
-                                {exams.length === 0 && <button onClick={seedData} className="bg-yellow-500 text-white px-3 py-1 rounded text-xs">นำเข้าตัวอย่าง</button>}
-                                <button onClick={()=>{ setEditorData({id:null, title:'', questions:[], category:'part_a', timeLimit:60}); setViewMode('editor'); }} className="bg-primary text-white px-3 py-1 rounded text-xs">+ เพิ่ม</button>
+                        <div className="sticky top-0 z-20 bg-white border-b border-slate-100 shadow-sm">
+                             <div className="flex items-center justify-between p-4 pb-2">
+                                <h2 className="text-lg font-bold text-[#111418]">จัดการเนื้อหา</h2>
+                                <div className="flex gap-2">
+                                    {activeTab === 'exams' ? (
+                                        <>
+                                            {exams.length === 0 && <button onClick={seedData} className="bg-yellow-500 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 shadow-sm hover:bg-yellow-600 transition-colors animate-pulse" title="เพิ่มข้อสอบตัวอย่างลงฐานข้อมูล"><Icon name="playlist_add" className="text-base" /> นำเข้าตัวอย่างทันที</button>}
+                                            <input type="file" accept=".csv" onChange={handleFileUpload} className="hidden" id="csv-upload" disabled={isUploading} />
+                                            <label htmlFor="csv-upload" className={`bg-green-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1 cursor-pointer hover:bg-green-700 transition-colors ${isUploading ? 'opacity-50' : ''}`}>{isUploading ? '...' : <Icon name="upload_file" className="text-base" />} CSV</label>
+                                            <button onClick={()=>{setEditorData({id:null, title:'', questions:[], category:'part_a', timeLimit:60}); setViewMode('editor');}} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1"><Icon name="add" className="text-base" /> สร้าง</button>
+                                        </>
+                                    ) : (
+                                        <button onClick={() => { setEditingContent(null); setShowContentModal(true); }} className="bg-admin-primary text-white px-3 py-1.5 rounded-lg text-sm font-bold flex items-center gap-1"><Icon name="add" className="text-base" /> เพิ่ม{activeTab === 'videos' ? 'วิดีโอ' : 'สรุป'}</button>
+                                    )}
+                                </div>
+                            </div>
+                            <div className="flex px-4 gap-6 overflow-x-auto hide-scrollbar">
+                                <button onClick={() => setActiveTab('exams')} className={`pb-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'exams' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>ข้อสอบ</button>
+                                <button onClick={() => setActiveTab('videos')} className={`pb-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'videos' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>วิดีโอสรุป</button>
+                                <button onClick={() => setActiveTab('summaries')} className={`pb-3 text-sm font-bold border-b-2 whitespace-nowrap transition-colors ${activeTab === 'summaries' ? 'border-primary text-primary' : 'border-transparent text-slate-400'}`}>สรุปเนื้อหา</button>
                             </div>
                         </div>
-                        <div className="p-4 flex flex-col gap-3">
-                            {exams.map(e => (
+                        <div className="p-4 max-w-4xl mx-auto w-full flex flex-col gap-3">
+                            {loading && <LoadingSpinner />}
+                            {!loading && activeTab === 'exams' && exams.map(e => (
                                 <div key={e.id} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center">
-                                    <div><h4 className="font-bold">{e.title}</h4><p className="text-xs text-slate-500">{e.questions?.length || 0} ข้อ ({e.category})</p></div>
+                                    <div><h4 className="font-bold">{e.title}</h4><p className="text-xs text-slate-500">{e.questions?.length || 0} ข้อ ({e.category === 'part_b' ? 'ภาค ข' : 'ภาค ก'})</p></div>
                                     <div className="flex gap-2">
-                                        <button onClick={()=>{setEditorData({...e, timeLimit: (e.timeLimit/60)}); setViewMode('editor');}} className="text-slate-400"><Icon name="edit"/></button>
-                                        <button onClick={()=>getCollection('exams').doc(e.id).delete()} className="text-red-400"><Icon name="delete"/></button>
+                                        <button onClick={()=>{setEditorData({...e, timeLimit: Math.floor((e.timeLimit||0)/60)}); setViewMode('editor');}} className="text-slate-400"><Icon name="edit"/></button>
+                                        <button onClick={() => { if(confirm('ลบ?')) getCollection('exams').doc(e.id).delete(); }} className="text-red-400"><Icon name="delete"/></button>
+                                    </div>
+                                </div>
+                            ))}
+                            {!loading && (activeTab !== 'exams') && contentItems.map(item => (
+                                <div key={item.id} className="bg-white p-4 rounded-xl shadow-sm flex justify-between items-center">
+                                    <div className="flex items-center gap-3"><Icon name={activeTab==='videos'?'play_circle':'article'} className={activeTab==='videos'?'text-red-500':'text-green-500'} /><span className="font-bold truncate w-48">{item.title}</span></div>
+                                    <div className="flex gap-2">
+                                        <button onClick={()=>{setEditingContent(item); setShowContentModal(true);}} className="text-slate-400"><Icon name="edit"/></button>
+                                        <button onClick={() => { if(confirm('ลบ?')) getCollection(activeTab==='videos'?'videos':'summaries').doc(item.id).delete(); }} className="text-red-400"><Icon name="delete"/></button>
                                     </div>
                                 </div>
                             ))}
                         </div>
+                        {showContentModal && <AddContentModal onClose={() => { setShowContentModal(false); setEditingContent(null); }} onSave={handleSaveContent} defaultType={activeTab === 'videos' ? 'video' : 'pdf'} initialData={editingContent} />}
                         <AdminBottomNav active="admin-exams" onNavigate={onNavigate} />
                     </div>
                 );
@@ -516,9 +662,61 @@
                             </select>
                             <input type="number" className="p-3 rounded border w-24" value={editorData.timeLimit} onChange={e=>setEditorData({...editorData, timeLimit:e.target.value})} placeholder="นาที" />
                         </div>
-                        {/* Simplified Question Adder for Brevity - In real app, reuse modal */}
-                        <div className="bg-white p-4 rounded border text-center text-slate-400">
-                             (ระบบแก้ไขรายข้ออยู่ใน Modal เดิม - กดบันทึกเพื่อสร้างโครงสร้างก่อน)
+                        <div className="flex justify-between items-center"><h3 className="font-bold">คำถาม ({editorData.questions.length})</h3><button onClick={()=>{setEditingQuestionIndex(null); setShowQuestionModal(true);}} className="text-primary">+ เพิ่มข้อ</button></div>
+                        <div className="space-y-3">
+                             {editorData.questions.map((q, idx) => (
+                                <div key={idx} className="bg-white p-4 rounded shadow relative">
+                                    <div className="pr-16"><span className="font-bold">{idx+1}.</span> {q.question}</div>
+                                    <div className="absolute top-2 right-2 flex gap-1"><button onClick={()=>{setEditingQuestionIndex(idx); setShowQuestionModal(true);}} className="text-slate-400"><Icon name="edit"/></button><button onClick={()=>handleDeleteQuestion(idx)} className="text-red-400"><Icon name="delete"/></button></div>
+                                </div>
+                             ))}
+                        </div>
+                    </div>
+                    {showQuestionModal && <QuestionEditorModal key={editingQuestionIndex !== null ? editingQuestionIndex : 'new'} question={editingQuestionIndex !== null ? editorData.questions[editingQuestionIndex] : null} onClose={() => setShowQuestionModal(false)} onSave={handleSaveQuestion} />}
+                </div>
+            );
+        }
+
+        // --- Question Editor Modal ---
+        function QuestionEditorModal({ question, onClose, onSave }) {
+            const [data, setData] = useState({ question: '', options: [{id:'A', text:''}, {id:'B', text:''}, {id:'C', text:''}, {id:'D', text:''}], correct: 'A', explanation: '' });
+            useEffect(() => { if (question) setData({...question}); }, [question]);
+            const handleOpt = (i, val) => { const opts = [...data.options]; opts[i].text = val; setData({...data, options: opts}); };
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="bg-white w-full max-w-lg mx-4 rounded-xl p-6 shadow-2xl overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                        <h3 className="font-bold mb-4">{question ? 'แก้ไข' : 'เพิ่ม'}ข้อสอบ</h3>
+                        <div className="space-y-3">
+                            <textarea className="w-full border p-2 rounded" rows="2" value={data.question} onChange={e => setData({...data, question: e.target.value})} placeholder="โจทย์"></textarea>
+                            {data.options.map((o, i) => (
+                                <div key={i} className="flex gap-2 items-center">
+                                    <span className="w-6 font-bold">{o.id}</span>
+                                    <input className="flex-1 border p-2 rounded" value={o.text} onChange={e => handleOpt(i, e.target.value)} />
+                                    <input type="radio" name="corr" checked={data.correct === o.id} onChange={() => setData({...data, correct: o.id})} />
+                                </div>
+                            ))}
+                            <textarea className="w-full border p-2 rounded" rows="2" value={data.explanation} onChange={e => setData({...data, explanation: e.target.value})} placeholder="คำอธิบายเฉลย"></textarea>
+                        </div>
+                        <div className="mt-4 flex gap-2"><button onClick={() => onSave(data)} className="flex-1 bg-primary text-white p-2 rounded">บันทึก</button><button onClick={onClose} className="flex-1 bg-slate-100 p-2 rounded">ยกเลิก</button></div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- Add Content Modal ---
+        function AddContentModal({ onClose, onSave, defaultType = 'pdf', initialData = null }) {
+            const [title, setTitle] = useState(initialData ? initialData.title : '');
+            const [url, setUrl] = useState(initialData ? initialData.url : '');
+            const [type, setType] = useState(initialData ? initialData.type : defaultType);
+            return (
+                <div className="modal-overlay" onClick={onClose}>
+                    <div className="bg-white w-full max-w-md mx-4 rounded-xl p-6 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="font-bold mb-4">{initialData ? 'แก้ไข' : 'เพิ่ม'}เนื้อหา</h3>
+                        <div className="space-y-4">
+                            <input className="w-full border p-2 rounded" value={title} onChange={e => setTitle(e.target.value)} placeholder="ชื่อหัวข้อ" />
+                            <select className="w-full border p-2 rounded" value={type} onChange={e => setType(e.target.value)}><option value="video">YouTube</option><option value="pdf">PDF</option><option value="web">Web</option><option value="image">Image</option></select>
+                            <input className="w-full border p-2 rounded" value={url} onChange={e => setUrl(e.target.value)} placeholder="URL Link" />
+                            <button onClick={() => onSave({ title, url, type, createdAt: initialData ? initialData.createdAt : new Date() })} className="w-full bg-primary text-white p-2 rounded">บันทึก</button>
                         </div>
                     </div>
                 </div>
@@ -533,8 +731,7 @@
         }
         function AdminHomeScreen({ onNavigate }) { return <div className="p-4">Admin Dashboard <AdminBottomNav active="admin-home" onNavigate={onNavigate} /></div>; }
         
-        // --- Reuse User Screens (Category, Exam, etc.) from previous robust version ---
-        // (Due to length limit, assuming they use getCollection(...) now)
+        // --- Reuse User Screens ---
         function CategoryScreen({ onNavigate, onStartExam }) {
              const [exams, setExams] = useState([]);
              const [tab, setTab] = useState('part_a');
@@ -578,9 +775,17 @@
             return <div className="flex flex-col items-center justify-center h-screen bg-white"><h1 className="text-4xl font-bold mb-2">{examState.score}%</h1><p>คะแนนของคุณ</p><button onClick={()=>onNavigate('home')} className="mt-8 bg-primary text-white px-6 py-2 rounded">กลับหน้าหลัก</button></div>;
         }
 
-        // Placeholders for Video/Summary/History/Profile to keep file runnable within limit
-        function VideoScreen({onNavigate}) { return <div className="p-4">วิดีโอ (ใช้ระบบเดียวกับ Admin) <BottomNav active="video" onNavigate={onNavigate}/></div>; }
-        function SummaryScreen({onNavigate}) { return <div className="p-4">สรุป (ใช้ระบบเดียวกับ Admin) <BottomNav active="summary" onNavigate={onNavigate}/></div>; }
+        // Placeholders for Video/Summary/History/Profile
+        function VideoScreen({onNavigate}) { 
+            const [items, setItems] = useState([]);
+            useEffect(() => getCollection('videos').onSnapshot(s => setItems(s.docs.map(d => d.data()))), []);
+            return <div className="p-4 flex flex-col gap-2">{items.map((i,x)=><div key={x} className="bg-white p-3 rounded shadow"><a href={i.url} target="_blank">{i.title}</a></div>)}<BottomNav active="video" onNavigate={onNavigate}/></div>; 
+        }
+        function SummaryScreen({onNavigate}) { 
+            const [items, setItems] = useState([]);
+            useEffect(() => getCollection('summaries').onSnapshot(s => setItems(s.docs.map(d => d.data()))), []);
+            return <div className="p-4 flex flex-col gap-2">{items.map((i,x)=><div key={x} className="bg-white p-3 rounded shadow"><a href={i.url} target="_blank">{i.title}</a></div>)}<BottomNav active="summary" onNavigate={onNavigate}/></div>; 
+        }
         function HistoryScreen({onNavigate}) { return <div className="p-4">ประวัติ <BottomNav active="history" onNavigate={onNavigate}/></div>; }
         function ProfileScreen({onNavigate, onLogout}) { return <div className="p-4"><button onClick={onLogout} className="text-red-500">Log out</button><BottomNav active="profile" onNavigate={onNavigate}/></div>; }
         function BottomNav({onNavigate}) { return <div className="fixed bottom-0 w-full bg-white border-t p-2 flex justify-around"><button onClick={()=>onNavigate('home')}>Home</button><button onClick={()=>onNavigate('category')}>Exam</button><button onClick={()=>onNavigate('profile')}>Profile</button></div>; }
