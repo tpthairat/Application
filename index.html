@@ -107,7 +107,10 @@
     <div id="root" class="w-full"></div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useMemo } = React;
+
+        // --- Global Cache for Performance ---
+        let _cachedExams = null;
 
         // --- Firebase Config ---
         const firebaseConfig = {
@@ -507,13 +510,17 @@
         }
 
         function HomeScreen({ user, onNavigate, onStartExam }) {
-            const [exams, setExams] = useState([]);
+            const [exams, setExams] = useState(_cachedExams ? _cachedExams.slice(0, 5) : []);
             const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
             
             useEffect(() => {
-                const unsubscribeExams = db.collection('exams').orderBy('createdAt', 'desc').limit(5).onSnapshot(snapshot => {
-                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
+                // Rule 2 compliant fetch
+                const unsubscribeExams = db.collection('exams').onSnapshot(snapshot => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                    
+                    _cachedExams = data;
+                    setExams(data.length ? data.slice(0, 5) : [INITIAL_MOCK_EXAM]); 
                 });
 
                 let unsubscribeStats = () => {};
@@ -714,10 +721,11 @@
             const [editingContent, setEditingContent] = useState(null);
 
             useEffect(() => {
-                const unsubscribe = db.collection('videos').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                    setVideos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'video' })));
+                const unsubscribe = db.collection('videos').onSnapshot(snapshot => {
+                    setVideos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'video' }))
+                        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
                     setLoading(false);
-                });
+                }, err => setLoading(false));
                 return () => unsubscribe();
             }, []);
 
@@ -817,10 +825,11 @@
             const [editingContent, setEditingContent] = useState(null);
 
             useEffect(() => {
-                const unsubscribe = db.collection('summaries').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                    setSummaries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                const unsubscribe = db.collection('summaries').onSnapshot(snapshot => {
+                    setSummaries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
                     setLoading(false);
-                });
+                }, err => setLoading(false));
                 return () => unsubscribe();
             }, []);
 
@@ -913,23 +922,30 @@
         }
 
         function CategoryScreen({ onNavigate, onStartExam }) {
-            const [exams, setExams] = useState([]);
-            const [loading, setLoading] = useState(true);
+            const [exams, setExams] = useState(_cachedExams || []);
+            const [loading, setLoading] = useState(!_cachedExams);
             const [activeTab, setActiveTab] = useState('part_a'); // part_a, part_b
 
             useEffect(() => {
-                const unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                    setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                // Rule 2 compliant fetch
+                const unsubscribe = db.collection('exams').onSnapshot(snapshot => {
+                    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                    
+                    _cachedExams = data;
+                    setExams(data);
                     setLoading(false);
-                });
+                }, err => setLoading(false));
                 return () => unsubscribe();
             }, []);
 
-            // Filter exams based on tab
-            const filteredExams = exams.filter(exam => {
-                const category = exam.category || 'part_a'; // Default to part_a for old data
-                return category === activeTab;
-            });
+            // Filter exams based on tab in memory (Rule 2)
+            const filteredExams = useMemo(() => {
+                return exams.filter(exam => {
+                    const category = exam.category || 'part_a';
+                    return category === activeTab;
+                });
+            }, [exams, activeTab]);
 
             return (
                 <div className="flex flex-col min-h-screen bg-[#f6f7f8]">
@@ -996,14 +1012,16 @@
                 if (!user) return;
                 const fetchHistory = async () => {
                     try {
+                        // Simple query (Rule 2)
                         const snapshot = await db.collection('exam_results')
                             .where('userId', '==', user.uid)
-                            .orderBy('date', 'desc')
                             .get();
+                        
                         const data = snapshot.docs.map(doc => {
                             const d = doc.data();
                             return { id: doc.id, ...d, dateString: d.date && d.date.toDate ? d.date.toDate().toLocaleDateString('th-TH') : 'N/A' };
-                        });
+                        }).sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
+                        
                         setHistory(data);
                     } catch (error) { console.error(error); } finally { setLoading(false); }
                 };
@@ -1340,16 +1358,21 @@
                 let unsubscribe;
 
                 if (activeTab === 'exams') {
-                    unsubscribe = db.collection('exams').orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                        setExams(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    // Rule 2 compliant fetch
+                    unsubscribe = db.collection('exams').onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                            .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                        setExams(data);
                         setLoading(false);
-                    });
+                    }, err => setLoading(false));
                 } else {
                     const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
-                    unsubscribe = db.collection(collectionName).orderBy('createdAt', 'desc').limit(20).onSnapshot(snapshot => {
-                        setContentItems(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                    unsubscribe = db.collection(collectionName).onSnapshot(snapshot => {
+                        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                            .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                        setContentItems(data);
                         setLoading(false);
-                    });
+                    }, err => setLoading(false));
                 }
                 
                 return () => unsubscribe && unsubscribe();
@@ -1670,10 +1693,11 @@
             const [tab, setTab] = useState('pending');
 
             useEffect(() => {
-                const unsubscribe = db.collection('users').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
-                    setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+                const unsubscribe = db.collection('users').onSnapshot(snapshot => {
+                    setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                        .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
                     setLoading(false);
-                });
+                }, err => setLoading(false));
                 return () => unsubscribe();
             }, []);
 
