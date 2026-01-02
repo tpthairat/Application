@@ -514,16 +514,19 @@
             const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
             
             useEffect(() => {
-                // Fetch ALL exams to ensure completeness, sorting in-memory for Rule 2
+                // Fetch ALL exams directly without dependency on user state for stability
                 const unsubscribeExams = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                     
                     _cachedExams = data;
-                    // No slice here to ensure all latest exams are available in horizontal scroll
                     setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
                 });
 
+                return () => unsubscribeExams();
+            }, []);
+
+            useEffect(() => {
                 let unsubscribeStats = () => {};
                 if (user) {
                     unsubscribeStats = db.collection('exam_results').where('userId', '==', user.uid).onSnapshot(snapshot => {
@@ -543,11 +546,7 @@
                         }
                     });
                 }
-
-                return () => {
-                    unsubscribeExams();
-                    unsubscribeStats();
-                };
+                return () => unsubscribeStats();
             }, [user]);
 
             return (
@@ -1009,7 +1008,6 @@
 
             useEffect(() => {
                 if (!user) return;
-                // Changed to onSnapshot for real-time completeness
                 const unsubscribe = db.collection('exam_results')
                     .where('userId', '==', user.uid)
                     .onSnapshot(snapshot => {
@@ -1356,7 +1354,7 @@
                     unsubscribe = db.collection('exams').onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                             .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-                        _cachedExams = data; // Ensure cache is complete even from admin
+                        _cachedExams = data; 
                         setExams(data);
                         setLoading(false);
                     }, err => setLoading(false));
@@ -1657,7 +1655,6 @@
              const [counts, setCounts] = useState({ users: '...', exams: '...' });
 
              useEffect(() => {
-                // Fetch real counts for completeness
                 const unsubUsers = db.collection('users').onSnapshot(snap => setCounts(prev => ({...prev, users: snap.size})));
                 const unsubExams = db.collection('exams').onSnapshot(snap => setCounts(prev => ({...prev, exams: snap.size})));
                 return () => { unsubUsers(); unsubExams(); };
