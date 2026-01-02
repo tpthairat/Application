@@ -109,7 +109,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- Global Cache for Performance ---
+        // --- Global Cache for Performance & Completeness ---
         let _cachedExams = null;
 
         // --- Firebase Config ---
@@ -510,17 +510,18 @@
         }
 
         function HomeScreen({ user, onNavigate, onStartExam }) {
-            const [exams, setExams] = useState(_cachedExams ? _cachedExams.slice(0, 5) : []);
+            const [exams, setExams] = useState(_cachedExams || []);
             const [userStats, setUserStats] = useState({ level: 'ผู้เริ่มต้น', score: 0, examsCount: 0 });
             
             useEffect(() => {
-                // Rule 2 compliant fetch
+                // Fetch ALL exams to ensure completeness, sorting in-memory for Rule 2
                 const unsubscribeExams = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                     
                     _cachedExams = data;
-                    setExams(data.length ? data.slice(0, 5) : [INITIAL_MOCK_EXAM]); 
+                    // No slice here to ensure all latest exams are available in horizontal scroll
+                    setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
                 });
 
                 let unsubscribeStats = () => {};
@@ -927,7 +928,6 @@
             const [activeTab, setActiveTab] = useState('part_a'); // part_a, part_b
 
             useEffect(() => {
-                // Rule 2 compliant fetch
                 const unsubscribe = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
@@ -939,7 +939,6 @@
                 return () => unsubscribe();
             }, []);
 
-            // Filter exams based on tab in memory (Rule 2)
             const filteredExams = useMemo(() => {
                 return exams.filter(exam => {
                     const category = exam.category || 'part_a';
@@ -1010,22 +1009,18 @@
 
             useEffect(() => {
                 if (!user) return;
-                const fetchHistory = async () => {
-                    try {
-                        // Simple query (Rule 2)
-                        const snapshot = await db.collection('exam_results')
-                            .where('userId', '==', user.uid)
-                            .get();
-                        
+                // Changed to onSnapshot for real-time completeness
+                const unsubscribe = db.collection('exam_results')
+                    .where('userId', '==', user.uid)
+                    .onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => {
                             const d = doc.data();
                             return { id: doc.id, ...d, dateString: d.date && d.date.toDate ? d.date.toDate().toLocaleDateString('th-TH') : 'N/A' };
                         }).sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
-                        
                         setHistory(data);
-                    } catch (error) { console.error(error); } finally { setLoading(false); }
-                };
-                fetchHistory();
+                        setLoading(false);
+                    }, err => setLoading(false));
+                return () => unsubscribe();
             }, [user]);
 
             return (
@@ -1213,7 +1208,7 @@
             );
         }
 
-        // --- NEW: Result Screen Component ---
+        // --- Result Screen Component ---
         function ResultScreen({ examState, totalQuestions, onNavigate }) {
             const score = examState.score;
             const correctCount = Math.round((score / 100) * totalQuestions);
@@ -1358,10 +1353,10 @@
                 let unsubscribe;
 
                 if (activeTab === 'exams') {
-                    // Rule 2 compliant fetch
                     unsubscribe = db.collection('exams').onSnapshot(snapshot => {
                         const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                             .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                        _cachedExams = data; // Ensure cache is complete even from admin
                         setExams(data);
                         setLoading(false);
                     }, err => setLoading(false));
@@ -1659,9 +1654,18 @@
         }
 
         function AdminHomeScreen({ user, onNavigate, onLogout }) {
+             const [counts, setCounts] = useState({ users: '...', exams: '...' });
+
+             useEffect(() => {
+                // Fetch real counts for completeness
+                const unsubUsers = db.collection('users').onSnapshot(snap => setCounts(prev => ({...prev, users: snap.size})));
+                const unsubExams = db.collection('exams').onSnapshot(snap => setCounts(prev => ({...prev, exams: snap.size})));
+                return () => { unsubUsers(); unsubExams(); };
+             }, []);
+
              const ADMIN_STATS = [
-                { title: "ผู้ใช้งานทั้งหมด", value: "...", icon: "group", color: "bg-blue-500" },
-                { title: "ข้อสอบในระบบ", value: "...", icon: "library_books", color: "bg-green-500" },
+                { title: "ผู้ใช้งานทั้งหมด", value: counts.users, icon: "group", color: "bg-blue-500" },
+                { title: "ข้อสอบในระบบ", value: counts.exams, icon: "library_books", color: "bg-green-500" },
             ];
             return (
                 <div className="pb-24 bg-[#f6f7f8] min-h-screen">
