@@ -109,7 +109,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
 
-        // --- Global Cache for Performance & Completeness ---
+        // --- Global Cache ---
         let _cachedExams = null;
 
         // --- Firebase Config ---
@@ -126,8 +126,9 @@
 
         if (!firebase.apps.length) {
             firebase.initializeApp(firebaseConfig);
-            firebase.firestore().enablePersistence().catch(err => {
-                console.log('Persistence disabled or error:', err.code);
+            // Non-blocking persistence initialization for better compatibility
+            firebase.firestore().enablePersistence({ synchronizeTabs: true }).catch(err => {
+                console.warn('Firestore persistence warning:', err.code);
             });
         }
         const auth = firebase.auth();
@@ -277,11 +278,9 @@
                 });
                 const scorePercentage = Math.round((correctCount / selectedExam.questions.length) * 100);
                 
-                // Update State and Navigate IMMEDIATELY (Don't wait for DB)
                 setExamState(prev => ({ ...prev, isFinished: true, score: scorePercentage }));
                 navigate('result');
 
-                // Save to DB in background
                 if (user) {
                     db.collection('exam_results').add({
                         userId: user.uid,
@@ -309,7 +308,6 @@
                 return () => clearInterval(interval);
             }, [currentScreen, examState.isFinished]);
 
-            // Watch for Time Up
             useEffect(() => {
                 if (examState.isTimeUp && !examState.isFinished) {
                     submitExam();
@@ -515,12 +513,15 @@
             
             useEffect(() => {
                 // Fetch ALL exams directly without dependency on user state for stability
+                // Removed limit to ensure ALL 10+ sets are fetched
                 const unsubscribeExams = db.collection('exams').onSnapshot(snapshot => {
                     const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                     
                     _cachedExams = data;
                     setExams(data.length ? data : [INITIAL_MOCK_EXAM]); 
+                }, (error) => {
+                    console.error("Firestore Listen Error (Exams):", error);
                 });
 
                 return () => unsubscribeExams();
@@ -544,6 +545,8 @@
                             
                             setUserStats({ level, score: avgScore, examsCount: snapshot.size });
                         }
+                    }, (error) => {
+                         console.error("Firestore Listen Error (Stats):", error);
                     });
                 }
                 return () => unsubscribeStats();
@@ -725,7 +728,10 @@
                     setVideos(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), type: 'video' }))
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
                     setLoading(false);
-                }, err => setLoading(false));
+                }, err => {
+                    console.error("Firestore Error (Videos):", err);
+                    setLoading(false);
+                });
                 return () => unsubscribe();
             }, []);
 
@@ -829,7 +835,10 @@
                     setSummaries(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
                     setLoading(false);
-                }, err => setLoading(false));
+                }, err => {
+                    console.error("Firestore Error (Summaries):", err);
+                    setLoading(false);
+                });
                 return () => unsubscribe();
             }, []);
 
@@ -934,7 +943,10 @@
                     _cachedExams = data;
                     setExams(data);
                     setLoading(false);
-                }, err => setLoading(false));
+                }, err => {
+                    console.error("Firestore Error (Category Exams):", err);
+                    setLoading(false);
+                });
                 return () => unsubscribe();
             }, []);
 
@@ -1017,7 +1029,10 @@
                         }).sort((a, b) => (b.date?.seconds || 0) - (a.date?.seconds || 0));
                         setHistory(data);
                         setLoading(false);
-                    }, err => setLoading(false));
+                    }, err => {
+                        console.error("Firestore Error (History):", err);
+                        setLoading(false);
+                    });
                 return () => unsubscribe();
             }, [user]);
 
@@ -1357,7 +1372,10 @@
                         _cachedExams = data; 
                         setExams(data);
                         setLoading(false);
-                    }, err => setLoading(false));
+                    }, err => {
+                        console.error("Firestore Admin Error:", err);
+                        setLoading(false);
+                    });
                 } else {
                     const collectionName = activeTab === 'videos' ? 'videos' : 'summaries';
                     unsubscribe = db.collection(collectionName).onSnapshot(snapshot => {
@@ -1365,7 +1383,10 @@
                             .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
                         setContentItems(data);
                         setLoading(false);
-                    }, err => setLoading(false));
+                    }, err => {
+                        console.error("Firestore Admin Content Error:", err);
+                        setLoading(false);
+                    });
                 }
                 
                 return () => unsubscribe && unsubscribe();
@@ -1655,8 +1676,8 @@
              const [counts, setCounts] = useState({ users: '...', exams: '...' });
 
              useEffect(() => {
-                const unsubUsers = db.collection('users').onSnapshot(snap => setCounts(prev => ({...prev, users: snap.size})));
-                const unsubExams = db.collection('exams').onSnapshot(snap => setCounts(prev => ({...prev, exams: snap.size})));
+                const unsubUsers = db.collection('users').onSnapshot(snap => setCounts(prev => ({...prev, users: snap.size})), err => console.error(err));
+                const unsubExams = db.collection('exams').onSnapshot(snap => setCounts(prev => ({...prev, exams: snap.size})), err => console.error(err));
                 return () => { unsubUsers(); unsubExams(); };
              }, []);
 
@@ -1698,7 +1719,10 @@
                     setUsers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
                         .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0)));
                     setLoading(false);
-                }, err => setLoading(false));
+                }, err => {
+                    console.error("Firestore Admin User Error:", err);
+                    setLoading(false);
+                });
                 return () => unsubscribe();
             }, []);
 
